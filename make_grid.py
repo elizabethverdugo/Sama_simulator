@@ -53,7 +53,7 @@ class Grid:
                                              self.columns - (self.columns / (n_centers / n)) / 2, int(n_centers / n)))
                 yvals = np.round(np.linspace(self.lines / (2 * n), self.lines * (1 - 1 / (2 * n)), int(n)))
 
-            centers_set_ = np.row_stack([(x, y) for x in xvals for y in yvals]).astype(int)
+            centers_set_ = np.vstack([(x, y) for x in xvals for y in yvals]).astype(int)
             for i in range(len(centers_set_)):
                 centers_set.add((centers_set_[i][0], centers_set_[i][1]))
             self.centers_set = list(centers_set)

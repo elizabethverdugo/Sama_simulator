@@ -747,3 +747,30 @@ def latency_plot(raw_data, iter_list, path, xlabel, subname_plot=''):
 
 def spectrum_aux_plot():  # todo - make a function to plot the interferece/SNIR/power spectrums
     pass
+
+
+def plot_distance_vs_ue(path, n_bs, ue_indices, distances):
+    # plot distance vs UE index for a given BS and save it to the specific folder, To test MIMO preliminary results...
+    # ue_indices: List or array of UE index
+    # n_bs: Number of BS
+    # Distance> list or array
+    # Path...
+
+    path = path + '\\' + str(n_bs) + 'BSs\\'
+    if platform.system() == 'Darwin':
+        path = path.replace('\\', '/')
+    if not os.path.exists(path):
+        os.mkdir(path)
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(ue_indices, distances, marker='o', linestyle='-', label='Distance')
+    plt.title(f'Distance vs UE_indx for BS {n_bs}')
+    plt.xlabel('UE index')
+    plt.ylabel('Distance')
+    plt.grid(True)
+    plt.legend()
+
+    print("Inside plot_distance_vs_ue: starting plot generation...")
+
+    plt.savefig(path + 'mimoDistance_' + str(n_bs) + ' BS.png')
+    plt.close('all')

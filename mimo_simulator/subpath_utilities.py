@@ -24,20 +24,21 @@ def acquire_subpath_parameters(N, M, path_powers):
 
     offset_values = all_offset_values[:M]
 
-    # Create sub-path power matrix: takes the power per path and divide it into the multipaths
-    #subpath_powers = np.tile(path_powers[:, np.newaxis] / M, (1, M))
-    subpath_powers = np.tile((path_powers / M).reshape(N, 1), (1, M))
+    num_bs, num_ues, N = path_powers.shape
 
-    # Create sub-path phases matrix: uniform from 0 to 360
-    subpath_phases = np.random.uniform(0, 360, (N, M))
+    #subpath powers
+    subpath_powers = (path_powers[..., np.newaxis]/ M)
+
+    # Create sub-path phases
+    subpath_phases = np.random.uniform(0, 360, (num_bs, num_ues, N, M))
 
     # Create sub-path AoD offsets matrix
-    subpath_offsets = np.tile(offset_values, (N, 1))
+    subpath_offsets = np.tile(offset_values, (num_bs, num_ues, N, 1))
 
     return subpath_powers, subpath_phases, subpath_offsets
 
 
-def calculate_offset_aoas(N, M):
+def calculate_offset_aoas(M, path_powers):
     """
     Calculate offset AoAs for the sub-paths of each path at the MS using specified values.
 
@@ -57,9 +58,12 @@ def calculate_offset_aoas(N, M):
                      23.7899, -23.7899, 30.9538, -30.9538, 40.1824, -40.1824, 53.1816, -53.1816, 75.4274, -75.4274]
 
     offset_values = all_offset_values[:M]
+    num_bs, num_ues, N = path_powers.shape
 
     # Create sub-path AoD offsets matrix
-    subpath_AoA_offsets = np.tile(offset_values, (N, 1))
+    subpath_AoA_offsets_per_path = np.tile(offset_values, (N, 1))
+
+    subpath_AoA_offsets = np.tile(subpath_AoA_offsets_per_path,(num_bs,num_ues, 1, 1))
 
     return subpath_AoA_offsets
 

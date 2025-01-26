@@ -1,3 +1,6 @@
+import warnings
+
+import matplotlib.pyplot as plt
 import numpy as np
 from util.data_management import save_data, load_data, macel_data_dict, write_conf, \
     temp_data_save, temp_data_load, temp_data_delete, convert_file_path_os
@@ -6,8 +9,14 @@ from util.param_data_management import load_param, update_param
 import tqdm, time
 import socket
 from util.plot_data_new import plot_histograms, plot_curves, plot_surfaces
+from util.plot_data_new import plot_distance_vs_ue
 from util.mann_whitney_u import compare_dist
 from clustering import Cluster
+from mimo_simulator.mimo_simulator import MIMOSimulator
+import matplotlib
+from matplotlib import colormaps
+
+warnings.filterwarnings("ignore",category=matplotlib.MatplotlibDeprecationWarning)
 
 # Just a set of auxiliary functions to setup a simulation environment
 
@@ -18,6 +27,7 @@ def simulate_macel(args):  # todo - fix the and check all the options here
     n_centers = args[3]
     ue_dist_type = args[4]
     random_centers = args[5]
+    parameters = args[6]
 
     if macel.map is not None:  # checking if map data is to be used
         macel.map.generate_samples(n_samples=n_samples)
@@ -32,8 +42,9 @@ def simulate_macel(args):  # todo - fix the and check all the options here
     #macel.set_ue(user_condition = macel.grid.point_condition) # FALTA TESTAR! CASO SEJA RASTER grid.point_condition n vai ser none
     
     # snr_cap_stats, raw_data = macel.place_and_configure_bs(n_centers=n_bs, output_typ='complete', clustering=True)
-    output = macel.place_and_configure_bs(n_centers=n_bs)
+    output = macel.place_and_configure_bs(n_centers=n_bs, parameters=parameters)
     # snr_cap_stats = macel.place_and_configure_bs(n_centers=n_bs, output_typ='simple', clustering=False)
+
     return output
 
 
@@ -45,6 +56,7 @@ def create_enviroment(parameters, param_path):
     from base_station import BaseStation
     from macel import Macel
     from make_raster import Raster
+    from mimo_simulator.mimo_simulator import MIMOSimulator
   
     map_ = None  # defining a empty variable to recieve a map class that also can be checked inside the pool
     if parameters['roi_param']['grid']:  # the function checks first if a grid is defined
@@ -123,7 +135,12 @@ def create_enviroment(parameters, param_path):
 
     base_station.sector_beam_pointing_configuration(n_beams=parameters['bs_param']['n_beams'])
 
-    # checking if downlink or uplink are to be used and picking the parameters
+    # EV 11.2024
+    mimo_simulator = None
+    if parameters['mimo_param'].get('mimo_system', False):
+        mimo_simulator = MIMOSimulator(parameters['mimo_param'])
+
+        # checking if downlink or uplink are to be used and picking the parameters
     if parameters['macel_param']['uplink']:
         downlink_specs = parameters['downlink_scheduler']
     else:
@@ -149,10 +166,13 @@ def create_enviroment(parameters, param_path):
                   bs_allocation_typ=parameters['macel_param']['bs_allocation_typ'],
                   dynamic_pl=parameters['macel_param']['dynamic_pathloss'],
                   downlink_specs=downlink_specs,
-                  uplink_specs=uplink_specs)
+                  uplink_specs=uplink_specs,
+                  mimo=mimo_simulator)
     macel.set_ue(hrx=parameters['ue_param']['hrx'], tx_power=parameters['ue_param']['tx_power'])
     macel.set_map(map_)
     macel.cluster = Cluster()
+
+    macel.ms_orientation = None     #temporal..
 
     # if a BS file point is used, it sets the centers outside the main simulation to optimize the process inside the pool
     if parameters['macel_param']['bs_allocation_typ'] == 'file':
@@ -251,7 +271,13 @@ def check_iter_type(iter_params):
 def start_simmulation(conf_file):
     global_parameters, param_path = load_param(filename=conf_file, backup=True)
 
+    global_parameters['mimo_param']['f_c'] = global_parameters['bs_param']['freq']
+    global_parameters['mimo_param']['power'] = global_parameters['bs_param']['tx_power']
+
+    use_multiprocessing = global_parameters['exec_param'].get('use_multiprocessing', True)
     process_pool = prep_multiproc(threads=global_parameters['exec_param']['threads'])
+    process_pool.close()
+    process_pool.join()
     global_parameters, path, folder, name_file, data_dict = get_additional_sim_param(global_parameters=global_parameters,
                                                                param_path=param_path, process_pool=process_pool)
 
@@ -314,15 +340,30 @@ def start_simmulation(conf_file):
 
             print(' ')
             print('Running step ', i, ':')
+            if not use_multiprocessing:
+                print("Running simulation without multiprocessing for debugging...")
+                data_ = []
+                for i in range(batch_size):
+                    # Directly call simulate_macel without multiprocessing
+                    result = simulate_macel((n_cells, macel, n_samples, n_centers, ue_dist_typ, random_centers,global_parameters))
+                    data_.append(result)
+            else:
+                try:
+                    print("Running simulation with multiprocessing...")
+                    process_pool = prep_multiproc(threads=global_parameters['exec_param']['threads'])
+                    data_ = list(
+                        tqdm.tqdm(
+                            process_pool.imap_unordered(
+                                simulate_macel, [(n_cells, macel, n_samples, n_centers, ue_dist_typ, random_centers,global_parameters)
+                                                            for i in range(batch_size)]),
+                            total = round(batch_size)
 
-            data_ = list(
-                tqdm.tqdm(
-                    process_pool.imap_unordered(
-                        simulate_macel, [(n_cells, macel, n_samples, n_centers, ue_dist_typ, random_centers)
-                                                  for i in range(batch_size)]), total=round(batch_size)
-                ))
-
-            process_pool.terminate()  # to avoid memory overflow when processing the plots
+                        )
+                    )
+                finally:
+                    process_pool.terminate()  # to avoid memory overflow when processing the plots
+                    process_pool.close()
+                    process_pool.join()
 
             data = temp_data_load()
             if data and hypothesis_test:
@@ -377,3 +418,24 @@ def start_simmulation(conf_file):
             print('saving surface plots ....')
             plot_surfaces(name_file=name_file, global_parameters=global_parameters, list_typ=iter_type)
             print('saving surface plots .... [done]')
+
+        """
+        if global_parameters['exec_param']['plot_mimoTest']:
+            loaded_data = load_data(name_file="path_to_MIMO.pkl")
+
+            if loaded_data:
+                macel.base_station_list = loaded_data.get("base_station_list", [])
+                macel.mimo_results = loaded_data.get("mimo_results", None)
+            else:
+                print("No data loaded")
+        
+
+
+            print('saving MIMO test plot ....')
+            for bs_index, bs in enumerate(macel.base_station_list):
+                ue_indices = list(range(macel.dist_map.shape[1]))
+                distances = macel.mimo_results[bs_index,:,0]
+                print(f"Path: {path}")
+                plot_distance_vs_ue(path=path, n_bs=bs_index+1, ue_indices=ue_indices, distances=distances)
+            print('saving MIMO test plot .... [done]')
+        """

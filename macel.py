@@ -15,7 +15,7 @@ from demos_and_examples.kmeans_from_scratch import K_Means_XP
 class Macel:
     def __init__(self, grid,prop_model, cell_size, base_station, simulation_time, time_slot, bs_allocation_typ,
                  dynamic_pl,t_min=None, bw_slot=None, criteria=None, scheduler_typ=None, log=False, 
-                 downlink_specs=None,uplink_specs=None, output_type="complete", tdd_up_time=0):
+                 downlink_specs=None,uplink_specs=None, output_type="complete", tdd_up_time=0, mimo=None):
 
         self.grid = grid  # grid object - size, points, etc
         self.n_centers = None
@@ -60,6 +60,10 @@ class Macel:
         # self.dwn_rel_t_index = None # todo VER SE VAI USAR ISSO AQUI !!!!
         self.dwn_elapsed_time = None
         self.up_elapsed_time = None
+
+        self.mimo_results = None
+        self.mimo = mimo  # Initialize the MIMO simulator as None
+        print(f"Initialized Macel with MIMO: {self.mimo is not None}")
     def set_map(self, map):
         self.map = map
 
@@ -189,7 +193,7 @@ class Macel:
                                                              t_index=t_index, c_target=cap_defict, ue_updt=False,
                                                              updated_beams=updated_beams[bs_index])
 
-    def place_and_configure_bs(self, n_centers, predetermined_centroids=None):
+    def place_and_configure_bs(self, n_centers, parameters=None, predetermined_centroids=None):
         # 'random', 'cluster' or 'file'
         if self.bs_allocation_typ == 'cluster':
         # if clustering:
@@ -236,6 +240,8 @@ class Macel:
                                                grid_obj=self.grid, samples=self.cluster.features, plot=False)
         elev_map = generate_elevation_map(htx=self.default_base_station.tx_height, hrx=self.ue.height,
                                           d_euclid=self.dist_map, cell_size=self.cell_size, samples=None)
+        self.az_map = az_map
+        self.elev_map = elev_map
         self.default_base_station.beam_configuration(
             az_map=self.default_base_station.beams_pointing)  # creating a beamforming configuration pointing to the the az_map points
 
@@ -259,8 +265,24 @@ class Macel:
         if self.uplink_specs is not None and self.tdd_up_time != 0:
             self.metrics.store_uplink_metrics(n_ues=self.ue.up_ue_bs.shape[0], n_bs=self.base_station_list.__len__(),
                                               simulation_time=self.simulation_time, time_slot=self.time_slot,
+
                                               criteria=self.uplink_specs['criteria'])  # initializing the uplink variables
+            #scheduler: next line
             self.send_ue_to_bs(uplink=True)
+
+        #MIMO simulation logic (moved here on 21.12.2024)
+        if self.mimo:
+            print("Running MIMO simulations...")
+            if self.mimo is None:
+                raise ValueError("MIMO simulator is not initialized...")
+
+            self.mimo_results = self.mimo.run_simulations(
+                dist_map=self.dist_map,
+                az_map=self.az_map,
+                ms_orientation=self.ms_orientation,
+                base_station_list=self.base_station_list,
+                parameters=parameters
+            )
 
         output = self.tdd_dwn_up_sim(output_typ=self.output_type)  # tdd scheduling that cals uplink and downlink simulations
 
@@ -496,6 +518,7 @@ class Macel:
 
         # generate the output dicionaries if the uplink simulation has ended (last time uplink will receive a call)
         if time_index == base_station.tdd_mux.up_scheduler.time_scheduler.simulation_time - 1:
+            #self.metrics.mimo_results = self.mimo_results
             return(self.metrics.create_uplink_metrics_dataframe(output_typ=output_typ, active_ue=self.ue.active_ue,
                                                                 cluster_centroids=[np.round(self.cluster.centroids).astype(int)],
                                                                 ue_pos=self.cluster.features,
@@ -504,7 +527,8 @@ class Macel:
                                                                 ue_bs_table=self.ue_bs_table,
                                                                 ue_path_loss = self.path_loss_map,
                                                                 dist_map=self.dist_map * self.cell_size,
-                                                                scheduler_typ=self.scheduler_typ))
+                                                                scheduler_typ=self.scheduler_typ,
+                                                                mimo_results = self.mimo_results))
 
     def downlink_interference(self, ch_gain_map, tdd_scheduler_range, rel_schdl_range, output_typ='raw'):
         # For the time, the downlink interference is fundamentally different of the uplink because, for simplicity and
@@ -602,3 +626,66 @@ class Macel:
                                                                   ue_bs_table=self.ue_bs_table,
                                                                   dist_map=self.dist_map * self.cell_size,
                                                                   scheduler_typ=self.scheduler_typ))
+
+    def initialize_mimo_results(self, num_bs, num_UE, num_features):
+        #To initialize the mimo results as arrays with the size of BSxUE per each iteration or UE or BS
+        self.mimo_results = np.zeros((num_bs, num_UE, num_features), dtype=float)
+        print(f"MIMO results initialized with shape {self.mimo_results.shape}")
+
+
+    def store_mimo_results(self, bs_index, ms_index, mimo_results):
+        # Store the MIMO results
+        while len(self.mimo_results) <= bs_index:
+            self.mimo_results.append({})
+
+        self.mimo_results[bs_index][ms_index] = mimo_results
+        #print(f"Stored MIMO results for BS index {bs_index}, MS index {ms_index}")     #To debug
+
+    """
+    def initialize_ms_orientation(self, parameters):
+        #print("Parameters received:", parameters)
+        ms_orientation_config = parameters.get("ms_orientation", {})
+        ms_orientation_enabled = ms_orientation_config.get("enabled", False)
+        ms_orientation_random = ms_orientation_config.get("random", True)
+        ms_orientation_range = ms_orientation_config.get("range", [0, 360])
+
+        if ms_orientation_enabled:
+            if self.dist_map is None:
+                raise ValueError("dist_map is not initialized in macel.. we need the number of UEs")
+            n_ues = self.dist_map.shape[1]
+            if ms_orientation_random:
+                self.ms_orientation = np.random.uniform(low=ms_orientation_range[0],
+                                                         high=ms_orientation_range[1],
+                                                         size=n_ues
+                                                         )
+            else:
+                raise ValueError("Currently only random is supported for ms:orientation")
+        else:
+            self.ms_orientation = np.zeros(self.dist_map.shape[1])
+
+        # print(f"MS Orientation GEnerated: {macel.ms_orientation}")
+
+    
+    def run_mimo_simulations(self):
+        if self.dist_map is None or self.az_map is None or self.ms_orientation is None:
+            raise ValueError("Required data are not initialized.")
+        num_bs = len(self.base_station_list)
+        num_ues = self.dist_map.shape[1]
+        self.ms_orientation_expanded = np.tile(self.ms_orientation,(num_bs, 1))
+
+        distances = self.dist_map
+        azimuths = self.az_map
+        orientations = self.ms_orientation_expanded
+
+        print("Running MIMO simulations...")
+        mimo_output = self.mimo.run_mimo(
+            distance=distances,
+            thetaBS_in=azimuths,
+            OmegaMS=orientations
+        )
+
+
+        self.mimo_results[:, :, 0] = mimo_output.get("distance_received", 0)
+        self.mimo_results[:, :, 1] = mimo_output.get("Angle of departure", 0)
+        self.mimo_results[:, :, 2] = mimo_output.get("MS orientation", 0)
+    """

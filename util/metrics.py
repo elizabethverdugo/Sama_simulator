@@ -41,6 +41,9 @@ class Metrics:
         self.dwn_cnt_satisfied_ue = None
         self.dwn_cap_deficit = None
 
+        #MIMO
+        self.mimo_results = None
+
     def store_uplink_metrics(self, cap=None, snr=None, t_index=None, base_station_list=None, n_bs=None, n_ues=None,
                              simulation_time=None, time_slot=None, criteria=None):
         # this function stores the uplink metrics during the simulation time and calculates some others
@@ -161,7 +164,7 @@ class Metrics:
             self.dwn_criteria = criteria
 
     def create_uplink_metrics_dataframe(self, output_typ, active_ue, cluster_centroids, ue_pos,ue_char,ue_prop_sce,ue_path_loss, ue_bs_table, dist_map,
-                                        scheduler_typ=None):
+                                        scheduler_typ=None, mimo_results=None):
         # this function will format the metrics after the simulation has ended in a dictionary format to make a backup
         # and plot some data
         # this dictionary is divided in simple pre-calculated metrics and raw metrics
@@ -227,6 +230,10 @@ class Metrics:
             norm_deficit = 1 - cap_sum / self.up_criteria
             mean_norm_deficit = np.mean(norm_deficit)
             std_norm_deficit = np.mean(norm_deficit)
+        if self.mimo_results is not None:
+            mimo_results = self.mimo_results.tolist()
+        else:
+            mimo_results= None
 
         import warnings
         warnings.filterwarnings("error")
@@ -253,7 +260,8 @@ class Metrics:
                              'norm_deficit': norm_deficit, 'meet_criteria': self.up_cnt_satisfied_ue,
                              'avg_latency': avg_latency, 'start_latency': start_latency, 'min_latency': min_latency,
                              'max_latency': max_latency, 'ran_cap_per_time': ran_cap_per_time, 'dist_map': dist_map,
-                             'user_condition':ue_char,'user_propagation_scenario':ue_prop_sce,'path_loss':ue_path_loss}
+                             'user_condition':ue_char,'user_propagation_scenario':ue_prop_sce,'path_loss':ue_path_loss,
+                             'mimo_results': mimo_results}
 
         else:
             raw_data_dict = {'bs_position': positions, 'ue_position': ue_pos, 'ue_bs_table': ue_bs_table,
@@ -262,7 +270,8 @@ class Metrics:
                              'user_time': user_time, 'user_bw': np.nanmean(self.up_user_bw, axis=1),
                              'avg_latency': avg_latency, 'start_latency': start_latency, 'min_latency': min_latency,
                              'max_latency': max_latency, 'ran_cap_per_time': ran_cap_per_time, 'dist_map': dist_map,
-                             'user_condition':ue_char,'user_propagation_scenario':ue_prop_sce,'path_loss':ue_path_loss}
+                             'user_condition':ue_char,'user_propagation_scenario':ue_prop_sce,'path_loss':ue_path_loss,
+                             'mimo_results': mimo_results}
 
         if output_typ == 'simple':
             # return snr_cap_stats
