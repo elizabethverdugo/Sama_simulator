@@ -6,11 +6,23 @@ from mimo_simulator.correlation_parameters import calculate_correlation
 from mimo_simulator.delay import delay
 from mimo_simulator.power_n import calculate_power
 from mimo_simulator.angles_utilities import calculate_aod, calculate_aoa
-from mimo_simulator.subpath_utilities import acquire_subpath_parameters, calculate_offset_aoas, associate_subpath, calculate_angles, calculate_gains
+from mimo_simulator.subpath_utilities import (
+    acquire_subpath_parameters,
+    calculate_offset_aoas,
+    associate_subpath,
+    calculate_angles,
+    calculate_gains_BS,
+    calculate_gains_MS,
+    compute_N0,
+    power_azimuth_spectrum
+)
+
 from mimo_simulator.pathloss import calculate_path_loss
 from mimo_simulator.channel_coefficients import calculate_channel_coef
 from mimo_simulator.allocation_utilities import water_filling, uniform_allocation
 from mimo_simulator.capacity_utilities import calculate_capacity
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 class PathInfo:
@@ -120,7 +132,13 @@ class MIMOSimulator:
             self.channels.append(channel_data)
 
 
-    def run_mimo(self, d, thetaBS, OmegaMS, delay_method="3GPP",  **kwargs):
+    def run_mimo(
+            self,
+            d,
+            thetaBS,
+            OmegaMS,
+            delay_method="3GPP",
+            **kwargs):
         #**kwargs:ensures that the argument which we pass is stored as a dictionary in the function
         """
         Simulate MIMO using parameters and a delay method.
@@ -140,24 +158,36 @@ class MIMOSimulator:
         # Initialize the environment (Suburban Macrocell example)
         env = SuburbMacro(system_type="MIMO")
 
-
         # Calculate distances and orientation parameters
-        OmegaBS, thetav, thetaMS = orientation_SAMA(thetaBS, OmegaMS)
+        OmegaBS, thetav, thetaMS = orientation_SAMA(
+            thetaBS=thetaBS,
+            OmegaMS=OmegaMS
+        )
+
+
         #print(f"Running MIMO Simulation for distance={distance}, AoD {thetaBS_in}, OmegaMS {OmegaMS},OmegaBS {OmegaBS}, thetav {thetav}, thetaMS {thetaMS}")
 
         num_bs, num_ues = d.shape
 
         """
+        not necessary anymore:
         # Calculate distances and orientation parameters
         d, OmegaBS, OmegaMS, thetaBS, thetav, thetaMS = orientation(env.R)
         """
 
         # Step 3: Determine DS, AS, and SF
         sigma_DS, sigma_AS, sigma_SF = calculate_correlation(
-            num_bs, self.rho_DS_AS, self.rho_SF_AS, self.rho_SF_DS,
-            self.zetha_SF, env.eps_AS, env.mu_AS, env.eps_DS, env.mu_DS, env.sigma_SH
+            N=num_bs,
+            rho_DS_AS=self.rho_DS_AS,
+            rho_SF_AS=self.rho_SF_AS,
+            rho_SF_DS=self.rho_SF_DS,
+            zetha_SF=self.zetha_SF,
+            eps_AS=env.eps_AS,
+            mu_AS=env.mu_AS,
+            eps_DS=env.eps_DS,
+            mu_DS=env.mu_DS,
+            sigma_SH=env.sigma_SH
         )
-
 
         # Steps 4-6: Delays, Powers, and Angles
         #tn = delay(self.N, env.r_DS, sigma_DS)
@@ -170,37 +200,199 @@ class MIMOSimulator:
             delay_method=self.delay_method
         )
 
-        Pn = calculate_power(env.r_DS, tn, sigma_DS)
+        Pn = calculate_power(
+            r_DS=env.r_DS,
+            tn=tn,
+            sigma_DS=sigma_DS
+        )
 
-        delta_AoD, idx_order = calculate_aod(d,thetaBS,self.N, env.r_AS, sigma_AS)
+        delta_AoD, idx_order = calculate_aod(
+            d=d,
+            AoD_bs=thetaBS,
+            N=self.N,
+            r_AS=env.r_AS,
+            sigma_AS=sigma_AS,
+            Antenna_Sectors=self.Antenna_Sectors
+        )
 
 
-        # Adjust path powers and delays
+        # Adjust delays and path powers (sorting)
         tn1 = np.take_along_axis(tn, idx_order, axis=-1)
         path_powers = np.take_along_axis(Pn, idx_order, axis=-1)
 
-        subpath_powers, subpath_phases, AoD_subpath_offsets = acquire_subpath_parameters(self.N, self.M, path_powers)
+        subpath_powers, subpath_phases, AoD_subpath_offsets = acquire_subpath_parameters(
+            N=self.N,
+            M=self.M,
+            path_powers=path_powers
+        )
 
-        delta_AoA = calculate_aoa(self.N, path_powers)
+        delta_AoA = calculate_aoa(
+            num_bs=num_bs,
+            num_ues=num_ues,
+            N=self.N,
+            path_powers=path_powers,
+            sigma_AS=sigma_AS,
+            AS_type="laplacian")
 
 
-        AoA_subpath_offsets = calculate_offset_aoas(self.M, path_powers)
+        AoA_subpath_offsets = calculate_offset_aoas(
+            M=self.M,
+            path_powers=path_powers
+        )
+
+
+        reassociated_ms_subpath_offsets = associate_subpath(
+            bs_subpath_offsets=AoD_subpath_offsets,
+            ms_subpath_offsets=AoA_subpath_offsets)
+
+
+        # Calculate angles for each subpath (4D)
+        aod_angles, aoa_angles = calculate_angles(
+            theta_BS=thetaBS,
+            delta_AoD=delta_AoD,
+            AoD_offsets=AoD_subpath_offsets,
+            theta_MS=thetaMS,
+            delta_AoA=delta_AoA,
+            AoA_offsets=reassociated_ms_subpath_offsets
+        )
+
+        # Calculate antenna gains
+        bs_gains = calculate_gains_BS(
+            Angle=aod_angles,
+            Antenna_Sectors=self.Antenna_Sectors
+        )
+
+        print("Min BS Gain (dB):", 10 * np.log10(np.min(bs_gains)))
+
+        ms_gains = calculate_gains_MS(
+            Angle=aoa_angles
+        )
 
         """
-        reassociated_ms_subpath_offsets = associate_subpath(AoD_subpath_offsets, AoA_subpath_offsets)
+        theta_values = aod_angles
+        sigma = np.std(theta_values)
+        theta_mean = np.mean(theta_values)
 
-        
-        # Calculate antenna gains
-        aod_angles, aoa_angles = calculate_angles(self.N, self.M, thetaBS, delta_AoD, AoD_subpath_offsets, thetaMS, delta_AoA,
-                                      reassociated_ms_subpath_offsets)
-        bs_gains = calculate_gains(aod_angles, self.Antenna_Sectors)
-        ms_gains = calculate_gains(aoa_angles, self.Antenna_Sectors)
+        N0 = compute_N0(
+            theta_mean=theta_mean,
+            sigma=sigma,
+            theta_range=np.linspace(-180, 180, num=1000)
+        )
 
-        # Calculate path loss and adjust sub-path powers
-        path_loss_db = calculate_path_loss(env.h_bs, env.h_ms, d, self.frequency, env.C)
+        pas_values = power_azimuth_spectrum(
+            theta=theta_values,
+            theta_mean=theta_mean,
+            sigma=sigma,
+            N0=N0
+        )
+
+
+        theta_flat = theta_values.flatten()
+        pas_flat = pas_values.flatten()
+
+        fig0 = plt.figure(figsize=(12, 5))
+        plt.figure(figsize=(10, 5))
+        plt.plot(theta_flat, 10 * np.log10(pas_flat), '.', alpha=0.5)  # Scatter plot to avoid overlapping
+        plt.xlabel("Angle (degrees)")
+        plt.ylabel("Power Azimuth Spectrum (dB)")
+        plt.title("Flattened Power Azimuth Spectrum for All BS-UE-Paths")
+        plt.grid(True)
+        plt.show()
+        """
+        ms_gains_dB = 10 * np.log10(ms_gains)
+        bs_gains_dB = 10 * np.log10(bs_gains)
+
+        fig1 = plt.figure(figsize=(12, 5))
+        plt.hist(aod_angles.flatten(), bins=50, alpha=0.6, label="AoD Angles", edgecolor='black')
+        plt.hist(aoa_angles.flatten(), bins=50, alpha=0.6, label="AoA Angles", edgecolor='black')
+        plt.legend()
+        plt.xlabel("Angle (degrees)")
+        plt.ylabel("Count")
+        plt.title("Distribution of AoD and AoA Angles")
+        plt.grid(True)
+
+        fig2=plt.figure(figsize=(12, 5))
+        plt.hist(ms_gains_dB.flatten(), bins=10, alpha=0.6, label="MS Gains", edgecolor='black')
+        plt.hist(bs_gains_dB.flatten(), bins=50, alpha=0.6, label="BS Gains", edgecolor='black')
+        plt.legend()
+        plt.xlabel("Gain (dB)")
+        plt.ylabel("Count")
+        plt.title("Distribution of MS and BS Gains")
+        plt.grid(True)
+        plt.yscale("log")
+
+        fig3=plt.figure(figsize=(8, 5))
+        plt.scatter(aod_angles.flatten(), 10 * np.log10(bs_gains.flatten()), alpha=0.3, s=2)
+        plt.xlabel("AoD Angle (degrees)")
+        plt.ylabel("BS Gain (dB)")
+        plt.title("BS Gain vs. AoD Angle")
+        plt.grid()
+        plt.show()
+
+        path_loss_db = calculate_path_loss(
+            h_bs=env.h_bs,
+            h_ms=env.h_ms,
+            d=d,
+            f_c=self.frequency,
+            C=env.C
+        )
+
         path_loss_linear = 10 ** (path_loss_db / 10)
         sigma_SF_linear = 10 ** (sigma_SF / 10)
-        adjusted_subpath_powers = subpath_powers / (path_loss_linear * sigma_SF_linear.reshape(-1, 1))
+
+        adjusted_subpath_powers = subpath_powers / (
+                path_loss_linear[:, :, np.newaxis, np.newaxis] * sigma_SF_linear[:, np.newaxis, np.newaxis, np.newaxis]
+        )
+
+        #To plot:
+        path_loss_db_flat = path_loss_db.flatten()
+        adjusted_subpath_powers_flat = adjusted_subpath_powers.flatten()
+
+        fig4= plt.figure(figsize=(12, 5))
+        sns.histplot(path_loss_db_flat, bins=50, kde=True)
+        plt.xlabel("Path Loss (dB)")
+        plt.ylabel("Counts")
+        plt.title("Path Loss Distribution")
+        plt.grid(True)
+
+        fig5=plt.figure(figsize=(12, 5))
+        sns.histplot(adjusted_subpath_powers_flat, bins=50, kde=True)
+        plt.xlabel("Adjusted Subpath Power")
+        plt.ylabel("Counts")
+        plt.title("Adjusted Subpath Power Distribution")
+        plt.grid(True)
+        plt.show()
+
+        h_matrix = calculate_channel_coef(
+            num_BS=num_bs,
+            num_MS=num_ues,
+            N=self.N,
+            M=self.M,
+            S=self.S,
+            U=self.U,
+            theta_BS=thetaBS,
+            theta_MS=thetaMS,
+            delta_AoD=delta_AoD,
+            delta_AoA=delta_AoA,
+            AoD_offsets=AoD_subpath_offsets,
+            AoA_offsets=reassociated_ms_subpath_offsets,
+            subpath_powers=subpath_powers,
+            subpath_phases=subpath_phases,
+            G_BS=bs_gains,
+            G_MS=ms_gains,
+            sigma_SF=sigma_SF,
+            d_bs=0.5,
+            d_ms=0.5,
+            v=2,
+            theta_v=thetav,
+            f=self.frequency,
+            time=0
+        )
+
+
+        """
+        # Calculate path loss and adjust sub-path powers
+     
 
         # Calculate channel coefficients
         h_matrix = calculate_channel_coef(self.N, self.M, self.S, self.U, thetaBS, thetaMS, delta_AoD, delta_AoA,
