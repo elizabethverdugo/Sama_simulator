@@ -17,7 +17,7 @@ def calculate_path_loss(h_bs, h_ms, d, f_c, C):
     # Ensure distance is never zero to avoid log(0) issue
     d = np.maximum(d, 1)
 
-    PL = (44.9 - 6.55 * np.log10(h_bs)) * np.log10(d / 1000) + 45.5 + \
+    PL = (44.9 - 6.55 * np.log10(h_bs)) * np.log10(d) + 45.5 + \
          (35.46 - 1.1 * h_ms) * np.log10(f_c) - 13.82 * np.log10(h_bs) + \
          0.7 * h_ms + C
 

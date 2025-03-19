@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from .dipole_element import DipoleElement
 
 
 class Antenna:  # mother class with general variables and functions

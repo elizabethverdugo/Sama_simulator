@@ -67,7 +67,16 @@ class Beamforming_Antenna():
                 print('need to define beam theta and phi first!!!')
 
         self._superposition_vector(phi, theta)
-        gain = self.ant_element.gain_pattern[phi, theta] + 10*np.log10(abs(np.sum(self.w_vec[beam] * self.v_vec))**2)
+
+        phi_idx = int(np.clip(round(phi), 0, self.ant_element.gain_pattern.shape[0]-1))
+        if np.min(theta) < 0:
+            theta = theta + 180
+
+        theta_idx = int(np.clip(round(theta), 0, self.ant_element.gain_pattern.shape[1]-1))
+
+        gain = (self.ant_element.gain_pattern[phi_idx, theta_idx] + 10*np.log10(abs(np.sum(self.w_vec[beam] * self.v_vec))**2 + 1e-12))
+
+        #gain = self.ant_element.gain_pattern[phi, theta] + 10*np.log10(abs(np.sum(self.w_vec[beam] * self.v_vec))**2)
 
         return gain
 

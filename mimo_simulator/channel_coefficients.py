@@ -112,6 +112,14 @@ def calculate_channel_coef(num_BS, num_MS, N, M, S, U, theta_BS, theta_MS, delta
     - H (num_BS, num_MS, U, S, N, M): MIMO channel coefficient matrix
     """
 
+    print("Shape debugging before subpath_contrib calculation:")
+    print(f"subpath_powers shape: {subpath_powers.shape}")
+    print(f"G_BS shape: {G_BS.shape}")
+    print(f"G_MS shape: {G_MS.shape}")
+    print(f"subpath_phases shape: {subpath_phases.shape}")
+
+
+
     c = 3e8  # Speed of light
     lambda_c = c / f  # Wavelength
     k = 2 * np.pi / lambda_c  # Wavenumber
@@ -125,17 +133,29 @@ def calculate_channel_coef(num_BS, num_MS, N, M, S, U, theta_BS, theta_MS, delta
     theta_n_m_AoD = np.radians(theta_BS[:, :, None, None] + delta_AoD[:, :, :, None] + AoD_offsets)
     theta_n_m_AoA = np.radians(theta_MS[:, :, None, None] + delta_AoA[:, :, :, None] + AoA_offsets)
 
-    # Compute BS and MS response vectors
-    a_BS = np.exp(1j * k * d_s * np.sin(theta_n_m_AoD[:, :, :, :, None]))
-    a_MS = np.exp(1j * k * d_u * np.sin(theta_n_m_AoA[:, :, :, :, None]))
 
+
+    # Compute BS and MS response vectors
+    #a_BS = np.exp(1j * k * d_s * np.sin(theta_n_m_AoD[:, :, :, :, None]))
+    #a_MS = np.exp(1j * k * d_u * np.sin(theta_n_m_AoA[:, :, :, :, None]))
+
+    a_MS = np.exp(1j * k * d_u * np.sin(theta_n_m_AoA[..., np.newaxis]))
+    a_MS = a_MS[..., np.newaxis]  # shape: (2,447,6,10,2,1)
+
+    a_BS = np.exp(1j * k * d_s * np.sin(theta_n_m_AoD[..., np.newaxis]))
+    a_BS = a_BS[..., np.newaxis, :]  # shape: (2,447,6,10,1,4)
 
     # Doppler shift
     shift = np.exp(1j * k * v * time * np.cos(theta_n_m_AoA - np.radians(theta_v)))  # Shape: (num_BS, num_MS, N, M)
 
-    # Compute subpath contribution
-    subpath_contrib = (np.sqrt(subpath_powers) * np.sqrt(sigma_SF) * np.sqrt(G_BS) *
-                       np.sqrt(G_MS) * shift * np.exp(1j * np.radians(subpath_phases)))  # Shape: (num_BS, num_MS, N, M)
+        # Compute subpath contribution
+    subpath_contrib = (np.sqrt(subpath_powers) *
+                       np.sqrt(sigma_SF[:, np.newaxis, np.newaxis, np.newaxis]) *
+                       np.sqrt(G_BS) *
+                       np.sqrt(G_MS) *
+                       shift *
+                       np.exp(1j * np.radians(subpath_phases))
+                       )  # Shape: (num_BS, num_MS, N, M)
 
     # Compute H using broadcasting
     H = subpath_contrib[:, :, :, :, None, None] * (a_MS @ a_BS)  # Shape: (num_BS, num_MS, U, S, N, M)

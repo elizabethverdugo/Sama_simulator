@@ -302,6 +302,7 @@ class MIMOSimulator:
         ms_gains_dB = 10 * np.log10(ms_gains)
         bs_gains_dB = 10 * np.log10(bs_gains)
 
+        """
         fig1 = plt.figure(figsize=(12, 5))
         plt.hist(aod_angles.flatten(), bins=50, alpha=0.6, label="AoD Angles", edgecolor='black')
         plt.hist(aoa_angles.flatten(), bins=50, alpha=0.6, label="AoA Angles", edgecolor='black')
@@ -328,6 +329,7 @@ class MIMOSimulator:
         plt.title("BS Gain vs. AoD Angle")
         plt.grid()
         plt.show()
+        """
 
         path_loss_db = calculate_path_loss(
             h_bs=env.h_bs,
@@ -340,14 +342,20 @@ class MIMOSimulator:
         path_loss_linear = 10 ** (path_loss_db / 10)
         sigma_SF_linear = 10 ** (sigma_SF / 10)
 
-        adjusted_subpath_powers = subpath_powers / (
-                path_loss_linear[:, :, np.newaxis, np.newaxis] * sigma_SF_linear[:, np.newaxis, np.newaxis, np.newaxis]
+        adjusted_subpath_powers = (
+                subpath_powers / (path_loss_linear[:, :, np.newaxis, np.newaxis] *
+                sigma_SF_linear[:, np.newaxis, np.newaxis, np.newaxis])
         )
+
+
+        # Expand powers across subpaths (M=10)
+        adjusted_subpath_powers = np.tile(adjusted_subpath_powers, (1, 1, 1, 10))
 
         #To plot:
         path_loss_db_flat = path_loss_db.flatten()
         adjusted_subpath_powers_flat = adjusted_subpath_powers.flatten()
 
+        """
         fig4= plt.figure(figsize=(12, 5))
         sns.histplot(path_loss_db_flat, bins=50, kde=True)
         plt.xlabel("Path Loss (dB)")
@@ -362,6 +370,8 @@ class MIMOSimulator:
         plt.title("Adjusted Subpath Power Distribution")
         plt.grid(True)
         plt.show()
+        """
+
 
         h_matrix = calculate_channel_coef(
             num_BS=num_bs,
@@ -376,7 +386,7 @@ class MIMOSimulator:
             delta_AoA=delta_AoA,
             AoD_offsets=AoD_subpath_offsets,
             AoA_offsets=reassociated_ms_subpath_offsets,
-            subpath_powers=subpath_powers,
+            subpath_powers=adjusted_subpath_powers,
             subpath_phases=subpath_phases,
             G_BS=bs_gains,
             G_MS=ms_gains,
@@ -390,16 +400,32 @@ class MIMOSimulator:
         )
 
 
+        H_mag = np.abs(h_matrix.flatten())
+
+        fig6=plt.figure(figsize=(10, 5))
+        plt.hist(20 * np.log10(H_mag + 1e-12), bins=50)  # dB scale
+        plt.xlabel("Channel coefficient magnitude (dB)")
+        plt.ylabel("Count")
+        plt.title("Histogram of |H| (in dB)")
+        plt.grid(True)
+        plt.show()
+
+        # Select one random BS-MS pair, e.g. (0,0)
+        H_sample = h_matrix[0, 0, :, :, :, :]  # shape (N,M,U,S)
+
+        # Sum over paths/subpaths to see antenna correlation
+        H_sum = np.sum(H_sample, axis=(0, 1))
+        print("Summed H (antenna correlation matrix):\n", np.abs(H_sum))
+
+        fig7=plt.imshow(np.abs(H_sum), cmap='viridis', interpolation='nearest')
+        plt.colorbar()
+        plt.title("Example antenna correlation (|H|) BS-MS (0,0)")
+        plt.xlabel("BS antennas")
+        plt.ylabel("MS antennas")
+        plt.show()
+
         """
-        # Calculate path loss and adjust sub-path powers
-     
-
-        # Calculate channel coefficients
-        h_matrix = calculate_channel_coef(self.N, self.M, self.S, self.U, thetaBS, thetaMS, delta_AoD, delta_AoA,
-                                   AoD_subpath_offsets, reassociated_ms_subpath_offsets, subpath_powers, subpath_phases,
-                                   bs_gains, ms_gains, sigma_SF, d_bs=0.5, d_ms=0.5, v=2, theta_v=thetav,
-                                   f=self.frequency, time=0)
-
+        
         # Calculate power allocation and capacity
         all_power_allocations = []
         all_capacity = []
