@@ -2,7 +2,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class Beamforming_Antenna():
-    def __init__(self, ant_element, frequency, n_rows, n_columns, horizontal_spacing, vertical_spacing, point_theta=None, point_phi=None):
+    def __init__(self,
+                 ant_element,
+                 frequency,
+                 n_rows,
+                 n_columns,
+                 horizontal_spacing,
+                 vertical_spacing,
+                 point_theta=None,
+                 point_phi=None,
+                 plot = False
+                 ):
         self.ant_element = ant_element
         self.frequency = frequency  # not used
         self.n_rows = n_rows
@@ -20,6 +30,10 @@ class Beamforming_Antenna():
         self.theta = np.arange(0, 360)
         self.v_vec = None
         self.w_vec = None
+        self.beam_gain = None
+
+        if plot:
+            self.plot()
 
         if point_theta is not None and point_phi is not None:
             self.beams = len(point_theta)
@@ -42,16 +56,16 @@ class Beamforming_Antenna():
     def _superposition_vector(self, phi, theta):
         rows = np.arange(self.n_rows) + 1
         columns = np.arange(self.n_columns) + 1
-        theta = theta + 90
-        # phi = phi - 180
+        theta = 180 - theta
+        #phi = -phi
         self.v_vec = np.exp(1j * 2 * np.pi * ((rows[:, np.newaxis] - 1) * self.dv * np.cos(np.deg2rad(theta)) +
                              (columns - 1) * self.dh * np.sin(np.deg2rad(theta)) * np.sin(np.deg2rad(phi))))
 
     def _weight_vector(self, point_phi, point_theta):
         rows = np.arange(self.n_rows) + 1
         columns = np.arange(self.n_columns) + 1
-        # point_theta = -point_theta
-        point_phi = -point_phi
+        point_theta = 90-point_theta
+        #point_phi = -point_phi
         w_vec = (1 / np.sqrt(self.n_rows * self.n_columns)) * \
                      np.exp(1j * 2 * np.pi * ((rows[:, np.newaxis] - 1) * self.dv * np.sin(np.deg2rad(point_theta))
                             - (columns - 1) * self.dh * np.cos(np.deg2rad(point_theta)) * np.sin(np.deg2rad(point_phi))))
@@ -69,19 +83,27 @@ class Beamforming_Antenna():
         self._superposition_vector(phi, theta)
 
         phi_idx = int(np.clip(round(phi), 0, self.ant_element.gain_pattern.shape[0]-1))
-        if np.min(theta) < 0:
-            theta = theta + 180
 
         theta_idx = int(np.clip(round(theta), 0, self.ant_element.gain_pattern.shape[1]-1))
 
         gain = (self.ant_element.gain_pattern[phi_idx, theta_idx] + 10*np.log10(abs(np.sum(self.w_vec[beam] * self.v_vec))**2 + 1e-12))
+        """
+        if phi==90 and theta in [0]:
+            print(f"Gain at theta={theta}, phi={phi}: {gain:.2f} dB")
+
+        if phi == 0 and theta in [90]:
+            print(f"Gain at theta={theta}, phi={phi}: {gain:.2f} dB")
+
+        if theta == 60 and phi in [45, 135]:
+            print(f"Gain at theta={theta}, phi={phi}: {gain:.2f} dB")
 
         #gain = self.ant_element.gain_pattern[phi, theta] + 10*np.log10(abs(np.sum(self.w_vec[beam] * self.v_vec))**2)
-
+        if np.isnan(gain):
+            print(f"NaN at beam ={beam}, phi={phi}, theta={theta}")
+        """
         return gain
 
-    def calculate_pattern(self, point_phi=None, point_theta=None, plot=False):
-
+    def calculate_pattern(self, point_phi=None, point_theta=None, plot=True):
         if point_phi is not None and point_theta is not None:  # if one wants to change the beams
             self.point_theta = point_theta
             self.point_phi = point_phi
@@ -92,6 +114,9 @@ class Beamforming_Antenna():
             for beam, [phi_tilt, theta_tilt] in enumerate(zip(self.point_phi, self.point_theta)):  # calculating the weight vector
                 self.w_vec[beam] = self._weight_vector(phi_tilt, theta_tilt)
 
+        if self.beam_gain is None:
+            self.beam_gain = np.zeros((len(self.point_theta), len(self.phi), len(self.theta)))
+
         for beam, _ in enumerate(self.point_phi):
             for phi in self.phi:
                 for theta in self.theta:
@@ -99,6 +124,8 @@ class Beamforming_Antenna():
                     # self._superposition_vector(phi, theta)
                     # self.beam_gain[beam, phi, theta] = self.ant_element.gain_pattern[phi, theta] + \
                     #                                    10*np.log10(abs(np.sum(self.w_vec[beam] * self.v_vec))**2)
+                    if np.isnan(self.beam_gain[beam, phi, theta]):
+                        print(f"NaN at beam ={beam}, phi={phi}, theta={theta}")
 
         if plot:
             self.plot()
@@ -108,15 +135,31 @@ class Beamforming_Antenna():
             self.calculate_pattern(self.point_phi, self.point_theta)
         else:
             for beam, [phi_tilt, theta_tilt] in enumerate(zip(self.point_phi, self.point_theta)):
-                plt.plot(self.phi, self.beam_gain[beam, :, 180 - theta_tilt])
-                plt.ylim(bottom=-30)
-                plt.grid(linestyle='--')
-                plt.title('phi')
-                plt.show()
+                plt.rcParams['font.size'] = 16
+                fig, ax = plt.subplots(subplot_kw={'projection':'polar'})
 
-                # plt.polar(np.deg2rad(self.theta), 10**(self.beam_gain[beam, phi_tilt,:]/10))
-                plt.plot(self.theta - 180, self.beam_gain[beam, phi_tilt, :])
-                plt.ylim(bottom=-30)
-                plt.grid(linestyle='--')
-                plt.title('theta')
+                print("Gain range:")
+                print(self.beam_gain[beam, :, theta_tilt].min(), self.beam_gain[beam, :, theta_tilt].max())
+
+                ax.plot(
+                    np.deg2rad(self.theta),
+                    self.beam_gain[beam, phi_tilt, :],
+                    label=fr'Elevation cut ($\phi={phi_tilt}^\circ$)',
+                    linestyle='-'
+                )
+
+                ax.plot(
+                    np.deg2rad(self.phi),
+                    self.beam_gain[beam, :, theta_tilt],
+                    label=fr'Azimuth cut ($\theta={theta_tilt}^\circ$)',
+                    linestyle='--'
+                )
+
+                ax.set_theta_zero_location('N')
+                ax.set_theta_direction(-1)
+                ax.set_rlabel_position(135)
+                ax.set_rlim(-20, 20)
+                ax.set_rticks([-20, -10, 0, 10, 20])
+                #leg = ax.legend(loc='upper right')
+                #leg.set_draggable(True)
                 plt.show()

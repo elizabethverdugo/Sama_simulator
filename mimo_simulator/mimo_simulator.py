@@ -1,87 +1,23 @@
 import numpy as np
-import yaml
-from mimo_simulator.distance_utility import orientation, orientation_SAMA
-from mimo_simulator.Environment import SuburbMacro, UrbMacro, UrbMicro
-from mimo_simulator.correlation_parameters import calculate_correlation
-from mimo_simulator.delay import delay
-from mimo_simulator.power_n import calculate_power
-from mimo_simulator.angles_utilities import calculate_aod, calculate_aoa
-from mimo_simulator.subpath_utilities import (
+from mimo_simulator.geometry.distance import orientation_SAMA
+from mimo_simulator.Environment import SuburbMacro
+from mimo_simulator.channel import calculate_correlation, delay
+from mimo_simulator.processing.power_n import calculate_power
+from mimo_simulator.processing.angles import calculate_aod, calculate_aoa
+from mimo_simulator.channel import (
     acquire_subpath_parameters,
     calculate_offset_aoas,
     associate_subpath,
     calculate_angles,
     calculate_gains_BS,
-    calculate_gains_MS,
-    compute_N0,
-    power_azimuth_spectrum
+    calculate_gains_MS
 )
 
 from mimo_simulator.pathloss import calculate_path_loss
 from mimo_simulator.channel_coefficients import calculate_channel_coef
-from mimo_simulator.allocation_utilities import water_filling, uniform_allocation
-from mimo_simulator.capacity_utilities import calculate_capacity
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-
-class PathInfo:
-    def __init__(self, delay, power, aod_angle, aoa_angle):
-        """
-        Initialize the path data BS-UnicodeError
-        Parameters:
-            -delay: path delays
-            -power: path powers
-            -aod_angle: angles of departure
-            -aoa_angle: angles of arrival
-        """
-
-        self.delay = delay
-        self.power = power
-        self.aod_angle = aod_angle
-        self.aoa_angle = aoa_angle
-
-    def summarize(self):
-        """
-        To print the path info..
-        """
-        return {
-            'delay': self.delay,
-            'power': self.power,
-            'aod_angle': self.aod_angle,
-            'aoa_angle': self.aoa_angle
-        }
-
-
-class ChannelData:
-    def __init__(self, bs_id, ue_id):
-        """
-        Channel data with multiple paths for BS-UE pars
-        Parameters:
-            -bs_id: ID of the BS
-            -ue_id: ID of the UE
-        """
-
-        self.bs_id = bs_id
-        self.ue_id = ue_id
-        self.paths = []
-
-    def add_path(self, path_info):
-        """
-        To add a path...
-        """
-        self.paths.append(path_info)
-
-    def summarize(self):
-        """
-        To print a summary of paths
-        """
-        path_summaries = [path.summarize() for path in self.paths]
-        return {
-            'bs_id': self.bs_id,
-            'ue_id': self.ue_id,
-            'paths': path_summaries
-        }
 
 class MIMOSimulator:
     def __init__(self, param_dict):
@@ -102,11 +38,6 @@ class MIMOSimulator:
         self.delay_method = param_dict.get('delay_method', '3GPP')  # Options: "3GPP", "distance", "both"
 
         self.channels = []  # to store later
-
-    def add_channel_data(self, channel_data):
-        # add channel data for BS-UE paths
-
-        self.channels.append(channel_data)  # to be able to make loops later
 
     def integrate_channels(self, ran_data):
         """
@@ -355,14 +286,16 @@ class MIMOSimulator:
         path_loss_db_flat = path_loss_db.flatten()
         adjusted_subpath_powers_flat = adjusted_subpath_powers.flatten()
 
-        """
+
         fig4= plt.figure(figsize=(12, 5))
         sns.histplot(path_loss_db_flat, bins=50, kde=True)
         plt.xlabel("Path Loss (dB)")
         plt.ylabel("Counts")
         plt.title("Path Loss Distribution")
         plt.grid(True)
+        plt.show()
 
+        """
         fig5=plt.figure(figsize=(12, 5))
         sns.histplot(adjusted_subpath_powers_flat, bins=50, kde=True)
         plt.xlabel("Adjusted Subpath Power")

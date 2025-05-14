@@ -1,9 +1,9 @@
 import os
 import numpy as np
-import geopandas as gpd
+#import geopandas as gpd
 import matplotlib.pyplot as plt
-from osgeo import gdal,ogr,osr
-import rasterio
+#from osgeo import gdal,ogr,osr
+#import rasterio
 from make_grid import Grid
 import pickle
 

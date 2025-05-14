@@ -15,6 +15,8 @@ from clustering import Cluster
 from mimo_simulator.mimo_simulator import MIMOSimulator
 import matplotlib
 from matplotlib import colormaps
+from antennas.dipole_element import DipoleElement
+from antennas.beamforming import Beamforming_Antenna
 
 warnings.filterwarnings("ignore",category=matplotlib.MatplotlibDeprecationWarning)
 
@@ -106,21 +108,43 @@ def create_enviroment(parameters, param_path):
     else:  # if neither map nor grid is used, raise an exception
         raise NameError('To start a simulation, need to use a GRID, RASTER or MAP in parameter file')
 
-    # instantiating an antenna element
-    element = Element_ITU2101(max_gain=parameters['antenna_param']['max_element_gain'],
-                              phi_3db=parameters['antenna_param']['phi_3db'],
-                              theta_3db=parameters['antenna_param']['theta_3db'],
-                              front_back_h=parameters['antenna_param']['front_back_h'],
-                              sla_v=parameters['antenna_param']['sla_v'],
-                              plot=False)
+    if parameters['antenna_param_ITU201']['enable']:
 
-    # instantiating a beamforming antenna
-    beam_ant = Beamforming_Antenna(ant_element=element,
-                                   frequency=None,
-                                   n_rows=parameters['antenna_param']['n_rows'],
-                                   n_columns=parameters['antenna_param']['n_columns'],
-                                   horizontal_spacing=parameters['antenna_param']['horizontal_spacing'],
-                                   vertical_spacing=parameters['antenna_param']['vertical_spacing'])
+        # instantiating an antenna element
+        element = Element_ITU2101(max_gain=parameters['antenna_param_ITU201']['max_element_gain'],
+                                  phi_3db=parameters['antenna_param_ITU201']['phi_3db'],
+                                  theta_3db=parameters['antenna_param_ITU201']['theta_3db'],
+                                  front_back_h=parameters['antenna_param_ITU201']['front_back_h'],
+                                  sla_v=parameters['antenna_param_ITU201']['sla_v'],
+                                  plot=False)
+
+        #### ADD HERE THE PART OF THE DIPOLE ANTENNA #####
+
+
+        # instantiating a beamforming antenna
+        beam_ant = Beamforming_Antenna(ant_element=element,
+                                       frequency=None,
+                                       n_rows=parameters['antenna_param_ITU201']['n_rows'],
+                                       n_columns=parameters['antenna_param_ITU201']['n_columns'],
+                                       horizontal_spacing=parameters['antenna_param_ITU201']['horizontal_spacing'],
+                                       vertical_spacing=parameters['antenna_param_ITU201']['vertical_spacing'])
+
+    elif parameters['antenna_param_dipole']['enable']:
+        element = DipoleElement(max_gain=parameters['antenna_param_dipole']['max_element_gain'],
+                                plot=False)
+
+        beam_ant = Beamforming_Antenna(
+            ant_element=element,
+            frequency=None,
+            n_rows=parameters['antenna_param_dipole']['n_rows'],
+            n_columns=parameters['antenna_param_dipole']['n_columns'],
+            horizontal_spacing=parameters['antenna_param_dipole']['horizontal_spacing'],
+            vertical_spacing=parameters['antenna_param_dipole']['vertical_spacing'],
+            point_theta=parameters['antenna_param_dipole']['point_theta'],
+            point_phi=parameters['antenna_param_dipole']['point_phi'],
+            plot = True
+        )
+
 
     # instantiating a basestation
     base_station = BaseStation(frequency=parameters['bs_param']['freq'],
@@ -131,7 +155,7 @@ def create_enviroment(parameters, param_path):
                                antenna=beam_ant,
                                gain=None,
                                downtilts=parameters['bs_param']['downtilt'],
-                               plot=False)
+                               plot=True)
 
     base_station.sector_beam_pointing_configuration(n_beams=parameters['bs_param']['n_beams'])
 

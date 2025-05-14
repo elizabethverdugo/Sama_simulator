@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 class DipoleElement:
     def __init__(self, max_gain=2.15, plot=False):
         self.max_gain = max_gain
@@ -9,6 +10,11 @@ class DipoleElement:
         self.theta = np.linspace(-180, 180,360)
 
         self.gain_pattern = self._calculate_gain_pattern()
+
+        self.theta = np.mod(self.theta, 360)
+        sorted_idx = np.argsort(self.theta)
+        self.theta = self.theta[sorted_idx]
+        self.gain_pattern = self.gain_pattern[:, sorted_idx]
 
         if plot:
             self.plot()
@@ -51,22 +57,32 @@ class DipoleElement:
         plt.show()
 
         #Polar plots:
-        plt.figure(figsize=(6,6))
-        plt.polar(
-            np.radians(self.theta),
+        plt.rcParams['font.size'] = 14
+        fig1, ax1 = plt.subplots(subplot_kw={'projection': 'polar'}, figsize=(6,6))
+        ax1.plot(np.radians(self.theta),
             self.gain_pattern[0,:],
-            label='Dipole Pattern (Elevation)'
+            label=r'Elevation cut ($\phi$=0°)'
         )
-        plt.title('Dipole Antenna Radiation Pattern (Elevation) - Polar')
-        plt.legend()
-        plt.show()
+        theta_idx = np.argmin(np.abs(self.theta - 90))
+        ax1.plot(np.radians(self.phi),
+                 self.gain_pattern[:, theta_idx],
+                 linestyle='--', linewidth=2, color='crimson',
+                 label=r'Azimuth cut ($\theta$=90°)'
+                 )
 
-        plt.figure(figsize=(6, 6))
-        plt.polar(
-            np.radians(self.phi),
-            self.gain_pattern[:, 90],
-            label='Dipole Pattern (Azimuth)'
-        )
-        plt.title('Dipole Antenna Radiation Pattern (Azimuth) - Polar')
-        plt.legend()
+
+        ax1.set_theta_zero_location('N')
+        ax1.set_theta_direction(-1)
+        ax1.set_rlabel_position(135)
+
+        ax1.set_rlim(-30,3)
+        ax1.set_rticks([-30, -20, -10, 0, 2])
+        #ax1.set_title('Dipole Antenna Radiation Pattern (Elevation and Azimuth) - Polar')
+        leg=ax1.legend(loc='upper right')
+        leg.set_draggable(True)
+        ax1.grid(True)
+        #ax1.text(np.radians(90), ax1.get_rmax() + 5, 'Gain(dB)',
+         #        ha='center', va='bottom', fontsize=12)
+        #ax1.set_ylabel('Gain (dBi)', labelpad=20)
+
         plt.show()

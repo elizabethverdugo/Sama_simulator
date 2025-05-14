@@ -1,9 +1,11 @@
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
 from antennas.dipole_element import DipoleElement
 from antennas.beamforming import Beamforming_Antenna
 
-dipole_antenna = DipoleElement(max_gain=2.15, plot=False)
+dipole_antenna = DipoleElement(max_gain=2.15, plot=True)
 
 """  
 #Only one pointing direction:
@@ -25,16 +27,16 @@ array.calculate_pattern(plot=True)
 array = Beamforming_Antenna(
     ant_element = dipole_antenna,
     frequency = 2.6e9,
-    n_rows = 2,
-    n_columns = 2,
+    n_rows = 8,
+    n_columns = 8,
     horizontal_spacing = 0.5,
     vertical_spacing = 0.5,
     point_theta=[60],
     point_phi=[90]
 )
 
-theta_points = [30, 60, 90]
-phi_points = [45, 90, 135]
+theta_points = [30, 60, 45]
+phi_points = [45, 90, 45]
 
 fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
 
