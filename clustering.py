@@ -59,7 +59,7 @@ class Cluster:
         self.centroids, self.labels = None, None
         if self.scaled_features is None:
             self.scaling(grid)
-        hier_clust = AgglomerativeClustering(n_clusters, affinity='euclidean', linkage='ward')
+        hier_clust = AgglomerativeClustering(n_clusters, metric='euclidean', linkage='ward')
         hier_clust.fit(self.scaled_features)
         self.cluster_method = 'Hierarchical Clustering'
         clf = NearestCentroid()

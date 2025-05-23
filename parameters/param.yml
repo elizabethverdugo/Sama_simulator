@@ -1,8 +1,8 @@
 exec_param:
   threads: 1 # if 0 - uses the maximum number of threads - 1
   use_multiprocessing: true  # multiprocessing or not
-  max_iter: 200  # number of iterations (repetitions/batches) - must be more than batch_iter todo - fix this in outside code
-  batch_size: 20 # number of iterations per batch - must be less than max_iter
+  max_iter: 10  # number of iterations (repetitions/batches) - must be more than batch_iter todo - fix this in outside code
+  batch_size: 2 # number of iterations per batch - must be less than max_iter
   hypothesis_test: True  # True if you want to use Mann_Whitney U test to evaluate the distribution and stop the simulation
   hypothesis_test_var: 'cap'  # variable that will be used if hypothesis_test = True
   plot_curves: True
@@ -19,9 +19,9 @@ roi_param:
   # ==================================================== grid param ====================================================
 
   grid: True
-  grid_lines: 1000
-  grid_columns: 1000
-  cel_size: 42
+  grid_lines: 5000
+  grid_columns: 5000
+  cel_size: 500
   #cel_size: 200
 
   # ================================================= end grid param  =================================================
@@ -67,7 +67,7 @@ macel_param:
   # ==================================== if bs_allocation_typ is RANDOM or CLUSTER ====================================
   min_bs: 2  # minimum number of BSs to be simulated
   max_bs: 3  # maximum number of BSs to be simulated
-  bs_step: 1  # the step to iterate between min_bs and max_bs -> leave with empty or 0 to not iterate (will use the minium vale) 
+  bs_step: 1  # the step to iterate between min_bs and max_bs -> leave with empty or 0 to not iterate (will use the minium vale)
   #bs_step zerado ou 0 n funciona rodar com min e max igual
   # ===================================================================================================================
 
@@ -78,7 +78,7 @@ macel_param:
   mux_tdd_up_time: 0.5  # percentage (between 0 and 1) of time used for the uplink when using TDD
 
   # ==================================== Propagation Models ==========================================================
-  dynamic_pathloss: True # Flag to if dynamic path loss decision. 
+  dynamic_pathloss: True # Flag to if dynamic path loss decision.
   # Dynamic path loss will use the user condition to define what is the best path loss for situation and only work with rasters.
   prop_model: 'free space'
   # Available path loss models for simulation with dynamic flag false: free space, 3GPP UMA,3GPP UMA O2I, WINNER2 C2, WINNER2 C4
@@ -121,23 +121,23 @@ antenna_param_dipole:  # -- refer to dipole --
   max_element_gain: 2.15
   # antenna array parameters
   frequency: 2.6e9
-  n_rows: 32
-  n_columns: 32
+  n_rows: 2
+  n_columns: 2
   horizontal_spacing: 0.5
   vertical_spacing: 0.5
   point_theta: [60] #elevation
-  point_phi: [0] #azimuth
+  point_phi: [90] #azimuth
 
 
 bs_param:
   freq: 3.5  # frequency (GHz)
   htx: 30
-  tx_power: 20  # transmission power (dBW) - 100W (20 dBW), 80W (19dBW), 60W (17.8 dBW), 40W (16 dBW)
-  bw: 300 # bw for n sectors (to be fixed)
+  tx_power: 100  # transmission power (dBW) - 100W (20 dBW), 80W (19dBW), 60W (17.8 dBW), 40W (16 dBW)
+  bw: 20 # bw for n sectors (to be fixed)
   n_sectors: 3
-  gain: 10  # not used
-  downtilt: 0
-  n_beams: 20
+  gain: 10  # not used, taken from the calculation with beamforming
+  downtilt: 0   #for MIMO it takes the one from point_theta (elevation)
+  n_beams: 1    #not used for MIMO
 
 ue_param:
   hrx: 1.5
@@ -171,11 +171,11 @@ mimo_param:
   zetha_SF: 0.5
   delay_method: "both"  # Options: "3GPP", "distance"> dist_map c, "both"
 
-  Antenna_Sectors: '3'  # it could be 3 or 6
+  #Antenna_Sectors: '3'  # it could be 3 or 6 not useful anymore
   #f_c: ${bs_param.freq}  # Frequency in MHz Added as global paramaters
 
   #power: ${bs_param.tx_power}  # [w] Added as global paramaters
-  noise: 2e-10  # Noise power [w] for a 20 MHz bandwidth
+  noise: 1.2e-14 # Noise power [w]
   # EV082024
 
 

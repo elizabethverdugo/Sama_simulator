@@ -1,8 +1,10 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
-def calculate_aod(d, AoD_bs, N, r_AS, sigma_AS, Antenna_Sectors):
+def calculate_aod(d, AoD_bs, N, r_AS, sigma_AS, mode="realistic_gain",
+                  beam_pointing=None, sector_map=None, beam_gain=None, downtilts=None):
 
-    # Calculate sigma_AoD for each path
+    # Calculate AoD values considering beamforming sectorizaion
     """
     Parameters:
     - d: Distance matrix (num_bs x num_ues).
@@ -10,7 +12,10 @@ def calculate_aod(d, AoD_bs, N, r_AS, sigma_AS, Antenna_Sectors):
     - N: Number of multipaths.
     - r_AS: Ratio of angular spread (environment parameter).
     - sigma_AS: Angular spread array-like (per BS).
-    - Antenna_Sectors: '3' or '6', to define the beamwidth
+    -mode: 'pas_gain_model' or 'realistic_gain'
+    - beam_pointing: Array of sector directions (n_sector)
+    -sector_map: matrix (num:_bs x num_eu ), sector assigned per link
+    -beam_gain: 3D gain pattern (for one array) 1,360,360
 
     Output
     - AoD_values: AoD values for each multipath component (num_bs x num_ues x N).
@@ -19,46 +24,71 @@ def calculate_aod(d, AoD_bs, N, r_AS, sigma_AS, Antenna_Sectors):
     """
     num_bs, num_ues = d.shape
     sigma_AoD = (r_AS * sigma_AS).reshape(num_bs, 1, 1)  # To use when considering multiple BS
-
-    # Adjust sigma based on sector type
-    if Antenna_Sectors == '3':
-        theta_3dB = 70
-        A_m = 20
-    elif Antenna_Sectors == '6':
-        theta_3dB = 35
-        A_m = 23
-    else:
-        raise ValueError("Antenna_Sectors must be '3' or '6'")
-
-
     # Generate angles using PAS model (Eq 4.5-2)
     theta_offset = np.random.laplace(loc=0, scale=sigma_AoD, size=(num_bs, num_ues, N))
 
-    # Compute Antenna Gain (Eq 4.5-1)
-    G_theta_dB = -np.minimum(12 * (theta_offset / theta_3dB) ** 2, A_m)
-    G_theta_linear = 10 ** (G_theta_dB / 10)
+    if mode == "pas_gain_model":
+        theta_3dB = 35 #default value if no pattern, see 3GPP for the sectorized cases
+        A_m = 23  #default, see 3GPP
 
-    # Re-weight angle selection based on PAS * Gain
-    weights = np.exp(-np.sqrt(2) * np.abs(theta_offset) / sigma_AoD) * G_theta_linear
-    # Ensure no zero probabilities (avoiding np.random.choice() errors)
-    weights = np.clip(weights, 1e-10, None)  # Minimum probability value
+        G_theta_dB = -np.minimum(12*(theta_offset/theta_3dB) ** 2, A_m)
+        G_theta_linear = 10**(G_theta_dB/10)
 
-    # Re-normalize (ensuring sum is exactly 1)
-    weights /= np.sum(weights, axis=-1, keepdims=True)
+        # Re-weight angle selection based on PAS * Gain
+        weights = np.exp(-np.sqrt(2) * np.abs(theta_offset) / sigma_AoD) * G_theta_linear
+        # Ensure no zero probabilities (avoiding np.random.choice() errors)
+        weights = np.clip(weights, 1e-10, None)  # Minimum probability value
 
-    # Generate AoD values using batch-wise selection
-    # Sample angles based on PAS distribution (see Section 4.5.4)
-    AoD_PAS_sampled = np.array([
-        np.random.choice(theta_offset[i, j], size=N, p=weights[i, j])
-        for i in range(theta_offset.shape[0])
-        for j in range(theta_offset.shape[1])
-    ]).reshape(theta_offset.shape[:2] + (N,))
+        # Re-normalize (ensuring sum is exactly 1)
+        weights /= np.sum(weights, axis=-1, keepdims=True)
 
-    # Generate i.i.d. zero-mean Gaussian random variables for each multipath
-    #AoD_random_vars = np.random.randn(num_bs, num_ues, N) * sigma_AoD   #temporal variable:  array of generated Gaussian random variables.
-    # Generate AoD variations using Laplacian distribution: v2 EV
-    # Add controlled Laplacian variation for realism (see Section 4.5.4)
-    AoD_random_vars = AoD_PAS_sampled + np.random.laplace(loc=0, scale=sigma_AoD, size=(num_bs, num_ues, N))
+        # Generate AoD values using batch-wise selection
+        # Sample angles based on PAS distribution (see Section 4.5.4)
+        AoD_PAS_sampled = np.array([
+            np.random.choice(theta_offset[i, j], size=N, p=weights[i, j])
+            for i in range(theta_offset.shape[0])
+            for j in range(theta_offset.shape[1])
+        ]).reshape(theta_offset.shape[:2] + (N,))
+
+        # Generate i.i.d. zero-mean Gaussian random variables for each multipath
+        # AoD_random_vars = np.random.randn(num_bs, num_ues, N) * sigma_AoD   #temporal variable:  array of generated Gaussian random variables.
+        # Generate AoD variations using Laplacian distribution: v2 EV
+        # Add controlled Laplacian variation for realism (see Section 4.5.4)
+        AoD_random_vars = AoD_PAS_sampled + np.random.laplace(loc=0, scale=sigma_AoD, size=(num_bs, num_ues, N))
+
+
+    elif mode == "realistic_gain":
+        # use realistic beam pattern to derive gain
+        # beam direction for each link
+        OmegaBS = beam_pointing[sector_map]
+        gain_offset = AoD_bs - OmegaBS
+
+        az_idx = np.round(AoD_bs).astype(int) % 360
+
+        phi_idx = downtilts.squeeze()[sector_map]
+        phi_idx = np.mod(np.rint(phi_idx).astype(int),360)
+
+        bs_flat = sector_map.flatten()
+        az_flat = az_idx.flatten()
+        phi_flat = phi_idx.flatten()
+
+
+        # 2. get gain values per sector azimuth, elevation
+        gain_flat = beam_gain[0, az_flat, phi_flat]
+
+        gain_matrix = gain_flat.reshape(sector_map.shape)
+        G_theta_linear = 10 **(gain_matrix/10)
+
+        # Re-weight angle selection based on PAS * Gain
+        weights = np.exp(-np.sqrt(2) * np.abs(theta_offset) / sigma_AoD) * G_theta_linear[:, :, np.newaxis]
+        # Ensure no zero probabilities (avoiding np.random.choice() errors)
+        weights = np.clip(weights, 1e-10, None)  # Minimum probability value
+
+        # Re-normalize (ensuring sum is exactly 1)
+        weights /= np.sum(weights, axis=-1, keepdims=True)
+
+        AoD_random_vars = np.random.laplace(loc=0, scale=sigma_AoD, size=(num_bs, num_ues, N))
+
 
     #print("Generated AoD random variables:", AoD_random_vars)
 
@@ -72,7 +102,7 @@ def calculate_aod(d, AoD_bs, N, r_AS, sigma_AS, Antenna_Sectors):
     #AoD_values = ordered_AoD_vars       #is simply the ordered list of AoD_random_vars
     AoD_values = AoD_bs[:, :, np.newaxis] + ordered_AoD_vars  # Add AoD_bs to each multipath AoD
 
-    return AoD_values, ordered_indices
+    return AoD_values, ordered_indices, G_theta_linear
 
 def calculate_aoa1(N, path_powers):
     """
@@ -134,4 +164,3 @@ def calculate_aoa(num_bs, num_ues, N, path_powers, sigma_AS, AS_type="laplacian"
         raise ValueError("Invalid AS_type. Choose 'laplacian' or 'uniform'.")
 
     return AoAs
-

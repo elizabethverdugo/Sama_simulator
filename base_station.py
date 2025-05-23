@@ -120,14 +120,43 @@ class BaseStation:
         elif uplink:
             self.up_active_beams = None
 
-    def sector_beam_pointing_configuration(self, n_beams):
+    def sector_beam_pointing_configuration(self, n_beams, is_dipole=False, plot=False):
         # sectors_pointing = np.arange(360/(2*self.n_sectors), 360.1, 360/self.n_sectors)
         self.beams_pointing = np.array([])
         sector_apperture = 360/self.n_sectors
-        beams_pointing_0 = np.arange(sector_apperture/(2*n_beams), sector_apperture+0.1, sector_apperture/n_beams)
-        self.beams_pointing = beams_pointing_0
-        for i in range(1, self.n_sectors):
-            self.beams_pointing = np.append(self.beams_pointing, beams_pointing_0 + sector_apperture*i)
+        if is_dipole:
+            #simplified logic for dipole array: one central beam per sector
+            for i in range(self.n_sectors):
+                center_angle = (i+0.5)*sector_apperture
+                self.beams_pointing = np.append(self.beams_pointing, center_angle)
+        else:
+            beams_pointing_0 = np.arange(sector_apperture/(2*n_beams), sector_apperture+0.1, sector_apperture/n_beams)
+            self.beams_pointing = beams_pointing_0
+            for i in range(1, self.n_sectors):
+                self.beams_pointing = np.append(self.beams_pointing, beams_pointing_0 + sector_apperture*i)
+
+        if plot:
+            phi_rad = np.deg2rad(self.beams_pointing)
+            if hasattr(self, 'downtilts') and self.downtilts is not None:
+                r_vals = np.array(self.downtilts)
+                r_vals = r_vals / max(r_vals)  #To Normalize
+            else:
+                r_vals = np.ones_like(phi_rad)
+
+            fig, ax = plt.subplots(subplot_kw={'projection':'polar'})
+            ax.set_theta_zero_location('N')
+            ax.set_theta_direction(-1)
+            ax.scatter(phi_rad, r_vals, c='red', s=100, label='Beam directions')
+
+            for i, phi in enumerate(self.beams_pointing):
+                ax.text(phi_rad[i], r_vals[i] + 0.05, f'{phi}°', ha='center', va='center')
+
+            ax.set_title("Sector beam pointing directions")
+            ax.set_rmax(1.2)
+            ax.grid(True)
+            ax.legend(loc='upper right')
+            plt.tight_layout()
+            plt.show()
 
     def generate_ant_pattern(self):  # used for sector antennas WITHOUT beamforming
         # horizontal_beamwidth = 360/self.n_sectors

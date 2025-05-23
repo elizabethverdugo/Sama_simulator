@@ -129,6 +129,18 @@ def create_enviroment(parameters, param_path):
                                        horizontal_spacing=parameters['antenna_param_ITU201']['horizontal_spacing'],
                                        vertical_spacing=parameters['antenna_param_ITU201']['vertical_spacing'])
 
+        # instantiating a basestation
+        base_station = BaseStation(frequency=parameters['bs_param']['freq'],
+                                   tx_power=parameters['bs_param']['tx_power'],
+                                   tx_height=parameters['bs_param']['htx'],
+                                   bw=parameters['bs_param']['bw'],
+                                   n_sectors=parameters['bs_param']['n_sectors'],
+                                   antenna=beam_ant,
+                                   gain=None,
+                                   downtilts=parameters['bs_param']['downtilt'],
+                                   plot=True)
+        base_station.sector_beam_pointing_configuration(n_beams=parameters['bs_param']['n_beams'])
+
     elif parameters['antenna_param_dipole']['enable']:
         element = DipoleElement(max_gain=parameters['antenna_param_dipole']['max_element_gain'],
                                 plot=False)
@@ -142,27 +154,39 @@ def create_enviroment(parameters, param_path):
             vertical_spacing=parameters['antenna_param_dipole']['vertical_spacing'],
             point_theta=parameters['antenna_param_dipole']['point_theta'],
             point_phi=parameters['antenna_param_dipole']['point_phi'],
-            plot = True
+            plot = False
         )
 
+        beam_ant.calculate_pattern(
+            point_phi=parameters['antenna_param_dipole']['point_phi'],
+            point_theta=parameters['antenna_param_dipole']['point_theta'],
+            plot=False
+        )
 
-    # instantiating a basestation
-    base_station = BaseStation(frequency=parameters['bs_param']['freq'],
-                               tx_power=parameters['bs_param']['tx_power'],
-                               tx_height=parameters['bs_param']['htx'],
-                               bw=parameters['bs_param']['bw'],
-                               n_sectors=parameters['bs_param']['n_sectors'],
-                               antenna=beam_ant,
-                               gain=None,
-                               downtilts=parameters['bs_param']['downtilt'],
-                               plot=True)
+        # instantiating a basestation (for MIMO add downtilt: )
+        base_station = BaseStation(frequency=parameters['bs_param']['freq'],
+                                   tx_power=parameters['bs_param']['tx_power'],
+                                   tx_height=parameters['bs_param']['htx'],
+                                   bw=parameters['bs_param']['bw'],
+                                   n_sectors=parameters['bs_param']['n_sectors'],
+                                   antenna=beam_ant,
+                                   gain=None,
+                                   downtilts=beam_ant.point_theta,
+                                   plot=True)
 
-    base_station.sector_beam_pointing_configuration(n_beams=parameters['bs_param']['n_beams'])
+        base_station.sector_beam_pointing_configuration(n_beams=parameters['bs_param']['n_beams'],
+                                                        is_dipole=True,
+                                                        plot=False)
+
 
     # EV 11.2024
     mimo_simulator = None
     if parameters['mimo_param'].get('mimo_system', False):
-        mimo_simulator = MIMOSimulator(parameters['mimo_param'])
+        mimo_simulator = MIMOSimulator(parameters['mimo_param'], hrx=parameters['ue_param']['hrx'],
+                                       beam_pointing = base_station.beams_pointing,
+                                       downtilts = base_station.downtilts,
+                                       n_sectors = base_station.n_sectors,
+                                       beam_gain = base_station.antenna.beam_gain)
 
         # checking if downlink or uplink are to be used and picking the parameters
     if parameters['macel_param']['uplink']:
@@ -297,6 +321,7 @@ def start_simmulation(conf_file):
 
     global_parameters['mimo_param']['f_c'] = global_parameters['bs_param']['freq']
     global_parameters['mimo_param']['power'] = global_parameters['bs_param']['tx_power']
+    global_parameters['ue_param']['hrx'] = global_parameters['ue_param']['hrx']
 
     use_multiprocessing = global_parameters['exec_param'].get('use_multiprocessing', True)
     process_pool = prep_multiproc(threads=global_parameters['exec_param']['threads'])
@@ -442,24 +467,3 @@ def start_simmulation(conf_file):
             print('saving surface plots ....')
             plot_surfaces(name_file=name_file, global_parameters=global_parameters, list_typ=iter_type)
             print('saving surface plots .... [done]')
-
-        """
-        if global_parameters['exec_param']['plot_mimoTest']:
-            loaded_data = load_data(name_file="path_to_MIMO.pkl")
-
-            if loaded_data:
-                macel.base_station_list = loaded_data.get("base_station_list", [])
-                macel.mimo_results = loaded_data.get("mimo_results", None)
-            else:
-                print("No data loaded")
-        
-
-
-            print('saving MIMO test plot ....')
-            for bs_index, bs in enumerate(macel.base_station_list):
-                ue_indices = list(range(macel.dist_map.shape[1]))
-                distances = macel.mimo_results[bs_index,:,0]
-                print(f"Path: {path}")
-                plot_distance_vs_ue(path=path, n_bs=bs_index+1, ue_indices=ue_indices, distances=distances)
-            print('saving MIMO test plot .... [done]')
-        """

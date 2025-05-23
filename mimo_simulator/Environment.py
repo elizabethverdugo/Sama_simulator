@@ -1,11 +1,11 @@
 from mimo_simulator.comsys import *
 
 class Environment:
-    def __init__(self, scenary, h_bs=None, h_ms=None, C=None, d=None, R=None):
+    def __init__(self, scenary, h_bs=None, h_ms=1.5, C=None, d=None, R=None):
         self.scenary = scenary
         if scenary == "Suburban Macro":
             self.h_bs = 32  # default value for #height base station in Suburban Macro
-            self.h_ms = 1.5 #height mobile station
+            self.h_ms = h_ms #height mobile station
             self.C = 0  #Constant factor
             self.d = 3  #distance BS to BS
             self.R = 1700 #Hexagonal radius
@@ -13,7 +13,7 @@ class Environment:
 
         elif scenary == "Urban Macro":
             self.h_bs = 32  # default value for h_bs in Suburban Macro
-            self.h_ms = 1.5
+            self.h_ms = h_ms
             self.C = 3  #Constant factor
             self.d = 3  #distance BS to BS
             self.R = 1200  #Hexagonal radius
@@ -21,7 +21,7 @@ class Environment:
 
         elif scenary == "Urban Micro":
             self.h_bs = 12.5
-            self.h_ms = 1.5
+            self.h_ms = h_ms
             self.C = None
             self.d = 1  #distance BS to BS
             self.R = 500 #Hexagonal radius
@@ -37,8 +37,9 @@ class Environment:
         # End of the if block
 
 class SuburbMacro(Environment, CommunicationSystem):
-    def __init__(self, system_type="default_system_type", mean_AS=0, dBS = 0, eps_AS=0, mu_AS=0, eps_DS=0, mu_DS=0, sigma_SH=0, r_DS = 0, r_AS=0):
-        Environment.__init__(self, "Suburban Macro")  # No need to pass h_bs, h_ms, C, and d
+    def __init__(self, system_type="default_system_type", h_ms=1.5,
+                 mean_AS=0, dBS = 0, eps_AS=0, mu_AS=0, eps_DS=0, mu_DS=0, sigma_SH=0, r_DS = 0, r_AS=0):
+        Environment.__init__(self, "Suburban Macro", h_ms=h_ms)  # No need to pass h_bs, h_ms, C, and d
 
         if system_type == "MIMO":
             mean_AS = 5  # Default value for mean_AS when system_type is "MIMO"
@@ -57,8 +58,9 @@ class SuburbMacro(Environment, CommunicationSystem):
 
 
 class UrbMacro(Environment, CommunicationSystem):
-    def __init__(self,system_type="default_system_type", mean_AS=0, dBS = 0, eps_AS=0, mu_AS=0, eps_DS=0, mu_DS=0, sigma_SH=0, r_DS = 0, r_AS=0):
-        Environment.__init__(self, "Urban Macro")
+    def __init__(self,system_type="default_system_type",  h_ms=1.5,
+                 mean_AS=0, dBS = 0, eps_AS=0, mu_AS=0, eps_DS=0, mu_DS=0, sigma_SH=0, r_DS = 0, r_AS=0):
+        Environment.__init__(self, "Urban Macro", h_ms=h_ms)
 
         if system_type == "MIMO":
             mean_AS = 2  # Default value for mean_AS when system_type is "MIMO"
@@ -74,8 +76,9 @@ class UrbMacro(Environment, CommunicationSystem):
         CommunicationSystem.__init__(self, system_type, mean_AS, dBS, eps_AS, mu_AS, eps_DS, mu_DS, sigma_SH, r_DS, r_AS)
 
 class UrbMicro(Environment):
-    def __init__(self,system_type="default_system_type", mean_AS=0, dBS = 0, eps_AS=0, mu_AS=0, eps_DS=0, mu_DS=0, sigma_SH=0, r_DS = 0, r_AS=0):
-        Environment.__init__(self, "Urban Micro")
+    def __init__(self,system_type="default_system_type", h_ms=1.5,
+                 mean_AS=0, dBS = 0, eps_AS=0, mu_AS=0, eps_DS=0, mu_DS=0, sigma_SH=0, r_DS = 0, r_AS=0):
+        Environment.__init__(self, "Urban Micro", h_ms=h_ms)
         if system_type == "MIMO":
             mean_AS = 16  # Default value for mean_AS when system_type is "MIMO"
             dBS = 2  # BS array elements spacing (in terms of lambda)

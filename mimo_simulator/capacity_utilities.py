@@ -20,3 +20,12 @@ def calculate_capacity(singularValues, power_allocated, noise):
     # Calculate the capacity
     capacity = np.sum(np.log2(1 + (singularValues ** 2 * power_allocated) / noise), axis=1)
     return capacity
+
+
+
+def capacity_bits_per_hz(singularValues: np.ndarray,
+                         power_alloc: np.ndarray,
+                         noise_psd: float) -> np.ndarray:
+
+    snr = power_alloc * singularValues**2 / noise_psd
+    return np.sum(np.log2(1 + snr), axis=1)

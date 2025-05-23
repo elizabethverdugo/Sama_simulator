@@ -1,4 +1,6 @@
 import numpy as np
+
+from mimo_simulator.allocation_utilities import water_filling, water_filling1, uniform_power
 from mimo_simulator.geometry.distance import orientation_SAMA
 from mimo_simulator.Environment import SuburbMacro
 from mimo_simulator.channel import calculate_correlation, delay
@@ -12,32 +14,37 @@ from mimo_simulator.channel import (
     calculate_gains_BS,
     calculate_gains_MS
 )
-
+from mimo_simulator.capacity_utilities import capacity_bits_per_hz
 from mimo_simulator.pathloss import calculate_path_loss
 from mimo_simulator.channel_coefficients import calculate_channel_coef
 import matplotlib.pyplot as plt
 import seaborn as sns
+from mimo_simulator.Plot_fun import ecdf
 
 
 class MIMOSimulator:
-    def __init__(self, param_dict):
+    def __init__(self, param_dict, hrx=1.5,
+                 beam_pointing=None, downtilts=None, n_sectors=1, beam_gain=None):
         self.S = param_dict['S']
         self.U = param_dict['U']
-        #self.BS = param_dict['BS']
-        #self.MS = param_dict['MS']
         self.N = param_dict['N']
         self.M = param_dict['M']
         self.rho_DS_AS = float(param_dict['rho_DS_AS'])
         self.rho_SF_AS = float(param_dict['rho_SF_AS'])
         self.rho_SF_DS = float(param_dict['rho_SF_DS'])
         self.zetha_SF = float(param_dict['zetha_SF'])
-        self.Antenna_Sectors = param_dict['Antenna_Sectors']
+        #self.Antenna_Sectors = param_dict['Antenna_Sectors']
         self.frequency = float(param_dict['f_c'])
         self.power = float(param_dict['power'])
         self.noise = float(param_dict['noise'])
         self.delay_method = param_dict.get('delay_method', '3GPP')  # Options: "3GPP", "distance", "both"
 
         self.channels = []  # to store later
+        self.hrx = hrx
+        self.beam_pointing = beam_pointing
+        self.downtilts = downtilts
+        self.n_sectors = n_sectors
+        self.beam_gain = beam_gain
 
     def integrate_channels(self, ran_data):
         """
@@ -63,11 +70,16 @@ class MIMOSimulator:
             self.channels.append(channel_data)
 
 
+
+
+
+
     def run_mimo(
             self,
             d,
             thetaBS,
             OmegaMS,
+            hrx,
             delay_method="3GPP",
             **kwargs):
         #**kwargs:ensures that the argument which we pass is stored as a dictionary in the function
@@ -87,24 +99,22 @@ class MIMOSimulator:
         """
 
         # Initialize the environment (Suburban Macrocell example)
-        env = SuburbMacro(system_type="MIMO")
+        env = SuburbMacro(system_type="MIMO", h_ms = self.hrx)
+
+
 
         # Calculate distances and orientation parameters
         OmegaBS, thetav, thetaMS = orientation_SAMA(
             thetaBS=thetaBS,
-            OmegaMS=OmegaMS
+            OmegaMS=OmegaMS,
+            beam_pointing=self.beam_pointing
         )
 
 
         #print(f"Running MIMO Simulation for distance={distance}, AoD {thetaBS_in}, OmegaMS {OmegaMS},OmegaBS {OmegaBS}, thetav {thetav}, thetaMS {thetaMS}")
 
         num_bs, num_ues = d.shape
-
-        """
-        not necessary anymore:
-        # Calculate distances and orientation parameters
-        d, OmegaBS, OmegaMS, thetaBS, thetav, thetaMS = orientation(env.R)
-        """
+        self.sector_map = self._build_sector_map(thetaBS, self.beam_pointing)
 
         # Step 3: Determine DS, AS, and SF
         sigma_DS, sigma_AS, sigma_SF = calculate_correlation(
@@ -137,15 +147,18 @@ class MIMOSimulator:
             sigma_DS=sigma_DS
         )
 
-        delta_AoD, idx_order = calculate_aod(
+        delta_AoD, idx_order, bs_gains = calculate_aod(
             d=d,
             AoD_bs=thetaBS,
             N=self.N,
             r_AS=env.r_AS,
             sigma_AS=sigma_AS,
-            Antenna_Sectors=self.Antenna_Sectors
+            mode = "realistic_gain",
+            beam_pointing=self.beam_pointing,
+            sector_map=self.sector_map,
+            beam_gain=self.beam_gain,
+            downtilts=self.downtilts
         )
-
 
         # Adjust delays and path powers (sorting)
         tn1 = np.take_along_axis(tn, idx_order, axis=-1)
@@ -187,51 +200,13 @@ class MIMOSimulator:
             AoA_offsets=reassociated_ms_subpath_offsets
         )
 
-        # Calculate antenna gains
-        bs_gains = calculate_gains_BS(
-            Angle=aod_angles,
-            Antenna_Sectors=self.Antenna_Sectors
-        )
-
-        print("Min BS Gain (dB):", 10 * np.log10(np.min(bs_gains)))
-
         ms_gains = calculate_gains_MS(
             Angle=aoa_angles
         )
 
-        """
-        theta_values = aod_angles
-        sigma = np.std(theta_values)
-        theta_mean = np.mean(theta_values)
-
-        N0 = compute_N0(
-            theta_mean=theta_mean,
-            sigma=sigma,
-            theta_range=np.linspace(-180, 180, num=1000)
-        )
-
-        pas_values = power_azimuth_spectrum(
-            theta=theta_values,
-            theta_mean=theta_mean,
-            sigma=sigma,
-            N0=N0
-        )
-
-
-        theta_flat = theta_values.flatten()
-        pas_flat = pas_values.flatten()
-
-        fig0 = plt.figure(figsize=(12, 5))
-        plt.figure(figsize=(10, 5))
-        plt.plot(theta_flat, 10 * np.log10(pas_flat), '.', alpha=0.5)  # Scatter plot to avoid overlapping
-        plt.xlabel("Angle (degrees)")
-        plt.ylabel("Power Azimuth Spectrum (dB)")
-        plt.title("Flattened Power Azimuth Spectrum for All BS-UE-Paths")
-        plt.grid(True)
-        plt.show()
-        """
+        bs_gains_expandend = bs_gains[:, :, np.newaxis, np.newaxis]
         ms_gains_dB = 10 * np.log10(ms_gains)
-        bs_gains_dB = 10 * np.log10(bs_gains)
+        bs_gains_dB = 10 * np.log10(bs_gains_expandend)
 
         """
         fig1 = plt.figure(figsize=(12, 5))
@@ -270,30 +245,47 @@ class MIMOSimulator:
             C=env.C
         )
 
-        path_loss_linear = 10 ** (path_loss_db / 10)
-        sigma_SF_linear = 10 ** (sigma_SF / 10)
+        #To plot:
+        path_loss_db_flat = path_loss_db.flatten()
+        fig4, ax = plt.subplots(figsize=(12, 5))
+        sns.histplot(path_loss_db_flat, bins=50, kde=True)
+        ax.set_xlabel("Path Loss (dB)", fontsize=16, labelpad=8)
+        ax.set_ylabel("Counts", fontsize=18, labelpad=8)
+        plt.xticks(fontsize=18)
+        plt.yticks(fontsize=18)
+        #plt.title("Path Loss Distribution")
+        ax.grid(True)
+        plt.show()
 
-        adjusted_subpath_powers = (
-                subpath_powers / (path_loss_linear[:, :, np.newaxis, np.newaxis] *
-                sigma_SF_linear[:, np.newaxis, np.newaxis, np.newaxis])
-        )
+        bs, ue = 0,0
+        print("PL_dB :", path_loss_db[bs, ue])
+        pl_pow = 10**(-path_loss_db[bs, ue]/10)
+        path_loss_linear = 10 ** (-path_loss_db / 10)
 
+        # adding randnomness to sigma SF
+        sigma_SF_corr_lin = np.tile(sigma_SF[:, None], (1, num_ues))
+        sigma_SF_corr_dB = 10 * np.log10(sigma_SF_corr_lin)
+        std_SF_corr = sigma_SF_corr_dB.std()
+
+        std_SF_iid = np.sqrt(max(0.0, 8.0 ** 2 - std_SF_corr ** 2))
+        sigma_SF_iid_dB = np.random.normal(0.0, std_SF_iid, size=(num_bs, num_ues))
+        sigma_SF_iid_lin = 10 ** (sigma_SF_iid_dB / 10)
+
+        sigma_SF_link_lin = sigma_SF_corr_lin * sigma_SF_iid_lin
+
+        pl_linear = path_loss_linear[:, :, None, None]
+        sf_linear = sigma_SF_link_lin[:, :, None, None]
+
+        adjusted_subpath_powers = (subpath_powers * pl_linear * sf_linear)
 
         # Expand powers across subpaths (M=10)
         adjusted_subpath_powers = np.tile(adjusted_subpath_powers, (1, 1, 1, 10))
 
-        #To plot:
-        path_loss_db_flat = path_loss_db.flatten()
+
         adjusted_subpath_powers_flat = adjusted_subpath_powers.flatten()
 
 
-        fig4= plt.figure(figsize=(12, 5))
-        sns.histplot(path_loss_db_flat, bins=50, kde=True)
-        plt.xlabel("Path Loss (dB)")
-        plt.ylabel("Counts")
-        plt.title("Path Loss Distribution")
-        plt.grid(True)
-        plt.show()
+
 
         """
         fig5=plt.figure(figsize=(12, 5))
@@ -321,7 +313,7 @@ class MIMOSimulator:
             AoA_offsets=reassociated_ms_subpath_offsets,
             subpath_powers=adjusted_subpath_powers,
             subpath_phases=subpath_phases,
-            G_BS=bs_gains,
+            G_BS=bs_gains_expandend,
             G_MS=ms_gains,
             sigma_SF=sigma_SF,
             d_bs=0.5,
@@ -333,15 +325,20 @@ class MIMOSimulator:
         )
 
 
-        H_mag = np.abs(h_matrix.flatten())
+        #h_matrix shape is BSs, UEs, N, M, U, S
+
+        #Flattening all rays to check the statistcics per ray
+        h_ray_db = 20*np.log10(np.abs(h_matrix).ravel() + 1e-15)
 
         fig6=plt.figure(figsize=(10, 5))
-        plt.hist(20 * np.log10(H_mag + 1e-12), bins=50)  # dB scale
+        plt.hist(h_ray_db, bins=50)  # dB scale
         plt.xlabel("Channel coefficient magnitude (dB)")
         plt.ylabel("Count")
         plt.title("Histogram of |H| (in dB)")
         plt.grid(True)
         plt.show()
+
+        power_split = 10*np.log10(self.N*self.M)        #power split per ray... see the paper
 
         # Select one random BS-MS pair, e.g. (0,0)
         H_sample = h_matrix[0, 0, :, :, :, :]  # shape (N,M,U,S)
@@ -357,41 +354,53 @@ class MIMOSimulator:
         plt.ylabel("MS antennas")
         plt.show()
 
-        """
+
+        #for capacity we need the BS-UE pair, a narrow-band UxS matrix
+        H_link = np.sum(h_matrix, axis=(2,3))       #new shape: (2,500,2,4)
+        B, UEs, U, S = H_link.shape
+
+        H_flat = H_link.reshape(B*UEs, U, S)    #newshape: (1000, 2, 4)
+
+        singular_vals = np.zeros((H_flat.shape[0], min (U,S)))
+
+        for k, H in enumerate(H_flat):
+            _, s, _ = np.linalg.svd(H, full_matrices=False)
+            singular_vals[k, :len(s)] = s
+
+        P_uni = uniform_power(singular_vals, self.power)
+        C_uni = capacity_bits_per_hz(singular_vals, P_uni, self.noise)
+
+        P_wf = water_filling(singular_vals, self.power, self.noise)
+        C_wf = capacity_bits_per_hz(singular_vals, P_wf, self.noise)
+
+        d_up, F_up = ecdf(C_uni)
+        d_wf, F_wf = ecdf(C_wf)
+
+
         
-        # Calculate power allocation and capacity
-        all_power_allocations = []
-        all_capacity = []
 
-        H_3dimension = h_matrix.shape[2]  # number of paths
-        for i in range(H_3dimension):
-            U, S_Values, Vh = np.linalg.svd(h_matrix[:, :, i])
-            S_diag = np.zeros((U.shape[0], Vh.shape[0]), dtype=float)
-            np.fill_diagonal(S_diag, S_Values)
-            SV_square = np.square(S_diag)
+        plt.figure(figsize=(6, 4))
+        plt.step(d_up, F_up, where='post', label='Uniform Power')
+        plt.step(d_wf, F_wf, where='post', label='Water-filling')
+        plt.xlabel('Spectral efficiency [bit s$^{-1}$ Hz$^{-1}$ ]', fontsize=16)
+        plt.ylabel('Empirical CDF', fontsize=18)
+        plt.grid(True)
+        plt.legend(fontsize=16)
+        plt.tight_layout()
+        plt.xticks(fontsize=18)
+        plt.yticks(fontsize=18)
+        plt.show()
 
-            # Power allocation using water filling
-            power_allocation = water_filling(SV_square, self.power, self.noise)
-            all_power_allocations.append(power_allocation)
-
-            # Capacity calculation
-            Capacity = calculate_capacity(S_diag, power_allocation, self.noise)
-            all_capacity.append(Capacity)
-
-        # Convert to numpy arrays for easier handling
-        all_power_allocations = np.array(all_power_allocations)
-        all_capacity = np.array(all_capacity)
-
-        aggregate_allocation = np.sum(all_power_allocations, axis=0)
-        aggregate_capacity = np.sum(all_capacity, axis=0)
-
+        """
         return {
             "h_matrix": h_matrix,
             "all_power_allocations": all_power_allocations,
             "aggregate_allocation": aggregate_allocation,
             "all_capacity": all_capacity,
             "aggregate_capacity": aggregate_capacity,
-        }"""
+        }
+        """
+
         # Return immediately after printing to isolate this test
         return {"distance_received": d,
                 "Angle of departure": thetaBS,
@@ -402,7 +411,7 @@ class MIMOSimulator:
                 "delays": tn}
 
 
-    def run_simulations(self, dist_map, az_map, ms_orientation=None, base_station_list=None, parameters=None):
+    def run_simulations(self, dist_map, az_map, ms_orientation=None, base_station_list=None, parameters=None, hrx=1.5):
         if dist_map is None or az_map is None:
             raise ValueError("Required data are not initialized.")
 
@@ -417,7 +426,8 @@ class MIMOSimulator:
         mimo_output = self.run_mimo(
             d=dist_map,
             thetaBS=az_map,
-            OmegaMS=ms_orientation_expanded
+            OmegaMS=ms_orientation_expanded,
+            hrx=hrx
         )
 
         num_ues = dist_map.shape[1]
@@ -456,3 +466,18 @@ class MIMOSimulator:
             ms_orientation = np.zeros(num_ues)
 
         return ms_orientation
+
+    def _build_sector_map(self, thetaBS, beam_pointing):
+        n_bs, n_ue = thetaBS.shape
+        sector_map = np.zeros_like(thetaBS, dtype=int)
+
+        for i in range(n_bs):
+            for j in range(n_ue):
+                angle = thetaBS[i,j]
+                sector_map[i,j] = np.argmin(np.abs(angle-beam_pointing))
+
+        return sector_map
+
+
+
+

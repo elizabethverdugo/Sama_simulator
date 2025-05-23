@@ -15,7 +15,8 @@ from demos_and_examples.kmeans_from_scratch import K_Means_XP
 class Macel:
     def __init__(self, grid,prop_model, cell_size, base_station, simulation_time, time_slot, bs_allocation_typ,
                  dynamic_pl,t_min=None, bw_slot=None, criteria=None, scheduler_typ=None, log=False, 
-                 downlink_specs=None,uplink_specs=None, output_type="complete", tdd_up_time=0, mimo=None):
+                 downlink_specs=None,uplink_specs=None, output_type="complete", tdd_up_time=0, mimo=None,
+                 hrx=1.5):
 
         self.grid = grid  # grid object - size, points, etc
         self.n_centers = None
@@ -126,7 +127,7 @@ class Macel:
         att_map,self.ue.prop_scenario = generate_path_loss_map(eucli_dist_map=dist_map, cell_size=self.cell_size, prop_model=self.prop_model,
                                          frequency=self.base_station_list[0].frequency,  # todo
                                          htx=self.default_base_station.tx_height, hrx=1.5,
-                                         user_condition=self.ue.user_condition) # LEMBRAR DE TORNAR O HRX EDITÁVEL AQUI!!! 
+                                         user_condition=self.ue.user_condition) # LEMBRAR DE TORNAR O HRX EDITÁVEL AQUI!!!
                                                                            # Adicionar a user_condition aqui (NICHOLAS)
         for bs_index, base_station in enumerate(self.base_station_list):
             lower_bound = 0
@@ -281,7 +282,8 @@ class Macel:
                 az_map=self.az_map,
                 ms_orientation=self.ms_orientation,
                 base_station_list=self.base_station_list,
-                parameters=parameters
+                parameters=parameters,
+                hrx=parameters['ue_param']['hrx']
             )
 
         output = self.tdd_dwn_up_sim(output_typ=self.output_type)  # tdd scheduling that cals uplink and downlink simulations
@@ -641,51 +643,4 @@ class Macel:
         self.mimo_results[bs_index][ms_index] = mimo_results
         #print(f"Stored MIMO results for BS index {bs_index}, MS index {ms_index}")     #To debug
 
-    """
-    def initialize_ms_orientation(self, parameters):
-        #print("Parameters received:", parameters)
-        ms_orientation_config = parameters.get("ms_orientation", {})
-        ms_orientation_enabled = ms_orientation_config.get("enabled", False)
-        ms_orientation_random = ms_orientation_config.get("random", True)
-        ms_orientation_range = ms_orientation_config.get("range", [0, 360])
 
-        if ms_orientation_enabled:
-            if self.dist_map is None:
-                raise ValueError("dist_map is not initialized in macel.. we need the number of UEs")
-            n_ues = self.dist_map.shape[1]
-            if ms_orientation_random:
-                self.ms_orientation = np.random.uniform(low=ms_orientation_range[0],
-                                                         high=ms_orientation_range[1],
-                                                         size=n_ues
-                                                         )
-            else:
-                raise ValueError("Currently only random is supported for ms:orientation")
-        else:
-            self.ms_orientation = np.zeros(self.dist_map.shape[1])
-
-        # print(f"MS Orientation GEnerated: {macel.ms_orientation}")
-
-    
-    def run_mimo_simulations(self):
-        if self.dist_map is None or self.az_map is None or self.ms_orientation is None:
-            raise ValueError("Required data are not initialized.")
-        num_bs = len(self.base_station_list)
-        num_ues = self.dist_map.shape[1]
-        self.ms_orientation_expanded = np.tile(self.ms_orientation,(num_bs, 1))
-
-        distances = self.dist_map
-        azimuths = self.az_map
-        orientations = self.ms_orientation_expanded
-
-        print("Running MIMO simulations...")
-        mimo_output = self.mimo.run_mimo(
-            distance=distances,
-            thetaBS_in=azimuths,
-            OmegaMS=orientations
-        )
-
-
-        self.mimo_results[:, :, 0] = mimo_output.get("distance_received", 0)
-        self.mimo_results[:, :, 1] = mimo_output.get("Angle of departure", 0)
-        self.mimo_results[:, :, 2] = mimo_output.get("MS orientation", 0)
-    """

@@ -160,6 +160,7 @@ class Beamforming_Antenna():
                 ax.set_rlabel_position(135)
                 ax.set_rlim(-20, 20)
                 ax.set_rticks([-20, -10, 0, 10, 20])
+                ax.set_title("Anteann array radiation pattern and pointing direction")
                 #leg = ax.legend(loc='upper right')
                 #leg.set_draggable(True)
                 plt.show()
